@@ -32,13 +32,6 @@ export function searchCommandPalette(memoryRepository: MemoryRepository, query: 
     category: 'command',
     payload: item.command,
   }))
-  const memory = memoryRepository.semanticSearch(query, 10).map<CommandPaletteItem>((item) => ({
-    id: `memory-${item.id}`,
-    label: item.content.slice(0, 80),
-    description: `Memory hit (${item.kind})`,
-    category: 'memory',
-    payload: item.content,
-  }))
   const actions: CommandPaletteItem[] = [
     {
       id: 'action-toggle-voice',
@@ -55,7 +48,7 @@ export function searchCommandPalette(memoryRepository: MemoryRepository, query: 
       payload: 'open-chat',
     },
   ]
-  return [...actions, ...workflows, ...commands, ...memory]
+  return [...actions, ...workflows, ...commands]
     .map((item) => ({ item, score: score(query, `${item.label} ${item.description}`) }))
     .filter((entry) => entry.score > 0 || query.trim().length === 0)
     .sort((a, b) => b.score - a.score)

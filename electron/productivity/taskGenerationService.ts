@@ -1,13 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import type { DevTask } from '../../shared/interfaces/ipc.js'
-
-function readEnv(name: string) {
-  const value = process.env[name]
-  return value && value.trim().length > 0 ? value.trim() : null
-}
+import { getEffectiveOpenAiApiKey, readProcessEnv } from '../ai/openAiEnv.js'
 
 export async function generateDeveloperTasks(prompt: string): Promise<DevTask[]> {
-  const apiKey = readEnv('OPENAI_API_KEY')
+  const apiKey = getEffectiveOpenAiApiKey()
   if (!apiKey) return fallbackTasks(prompt)
 
   try {
@@ -18,7 +14,7 @@ export async function generateDeveloperTasks(prompt: string): Promise<DevTask[]>
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: readEnv('OPENAI_MODEL') ?? 'gpt-4o-mini',
+        model: readProcessEnv('OPENAI_MODEL') ?? 'gpt-4o-mini',
         temperature: 0.2,
         response_format: { type: 'json_object' },
         messages: [

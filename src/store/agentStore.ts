@@ -44,7 +44,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   },
   executePlan: async (planId) => {
     set({ isExecuting: true, error: null })
-    const result = await desktopClient.executePlan(planId)
+    const result = await desktopClient.executePlan({ planId })
     if (!result?.ok) {
       set({ isExecuting: false, error: result?.message ?? 'Execution failed.' })
       return

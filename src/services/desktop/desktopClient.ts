@@ -3,9 +3,8 @@ import type {
   AssistantOverlayState,
   AiModelInfo,
   AiProviderMetrics,
+  AiProviderRuntimeStatus,
   AiProviderSettings,
-  AgentExecutionPlan,
-  AgentRunSummary,
   AssistantTask,
   ChatStartStreamInput,
   ChatStreamEvent,
@@ -14,35 +13,17 @@ import type {
   CommandPaletteItem,
   ExecuteIntentResult,
   MemoryOverview,
-  MultiAgentSession,
-  ObservabilityEvent,
-  ObservabilitySnapshot,
-  LearningFeedbackRecord,
-  BehaviorPattern,
-  AdaptiveRecommendation,
-  WorkflowOptimizationInsight,
-  LearningSnapshot,
   ParsedIntent,
   PersonalizationSuggestion,
-  ProductivityInsights,
-  ProjectContext,
   ProjectMemory,
   ScreenAnalysisResult,
   ScreenCaptureRecord,
-  SemanticMemoryHit,
-  SkillCapabilityOverview,
-  SkillDefinition,
-  TerminalAnalysisResult,
-  DevTask,
-  UiUxAnalysisResult,
   GlobalShortcutBindings,
   IndexingStatus,
   KnowledgeGraphSnapshot,
   SemanticSearchFilter,
   SemanticSearchResult,
   ContextRetrievalResult,
-  AgentPerformanceMetric,
-  ProactiveNotification,
   WorkspaceContext,
   WorkflowRunRecord,
   WorkflowSchedule,
@@ -50,7 +31,29 @@ import type {
   VoiceTranscriptionInput,
   VoiceTranscriptionResult,
   WorkflowDefinition,
+  ActiveWindowInfo,
+  SemanticMemoryHit,
+  AgentExecutionPlan,
+  AgentRunSummary,
+  MultiAgentSession,
+  AgentPerformanceMetric,
+  ObservabilityEvent,
+  ObservabilitySnapshot,
+  ProactiveNotification,
+  LearningFeedbackRecord,
+  BehaviorPattern,
+  AdaptiveRecommendation,
+  WorkflowOptimizationInsight,
+  LearningSnapshot,
+  ProjectContext,
+  ProductivityInsights,
+  TerminalAnalysisResult,
+  UiUxAnalysisResult,
+  DevTask,
+  SkillDefinition,
+  SkillCapabilityOverview,
 } from '@shared/interfaces/ipc'
+import type { JarvisDesktopApi } from '@shared/types'
 
 const fallbackSnapshot: SystemSnapshot = {
   cpuUsagePercent: 0,
@@ -70,253 +73,323 @@ const fallbackSnapshot: SystemSnapshot = {
   timestamp: Date.now(),
 }
 
+/** Electron preload bridge (`jarvis` and `electron` expose the same API — prefer `jarvis` to avoid name clashes). */
+function desktopBridge(): JarvisDesktopApi | undefined {
+  return window.jarvis ?? window.electron
+}
+
+/** True when preload ran and exposed the desktop API (read in renderer after load). */
+export function isDesktopBridgeAvailable(): boolean {
+  return Boolean(window.jarvis ?? window.electron)
+}
+
+/**
+ * Typed bridge to the Electron preload API (`window.jarvis` / `window.electron`).
+ */
 export const desktopClient = {
   async getSystemSnapshot(): Promise<SystemSnapshot> {
-    return window.jarvis?.system.getSnapshot() ?? fallbackSnapshot
+    return desktopBridge()?.system.getSnapshot() ?? fallbackSnapshot
   },
   async parseIntent(input: string): Promise<ParsedIntent | null> {
-    if (!window.jarvis) return null
-    return window.jarvis.ai.parseIntent(input)
+    const d = desktopBridge()
+    if (!d) return null
+    return d.ai.parseIntent(input)
   },
   async executeIntent(input: string): Promise<ExecuteIntentResult | null> {
-    if (!window.jarvis) return null
-    return window.jarvis.ai.executeIntent(input)
-  },
-  async planGoal(goal: string): Promise<AgentExecutionPlan | null> {
-    if (!window.jarvis) return null
-    return window.jarvis.ai.planGoal(goal)
-  },
-  async executePlan(planId: string, allowRiskyActions = false): Promise<{ ok: boolean; message: string } | null> {
-    if (!window.jarvis) return null
-    return window.jarvis.ai.executePlan({ planId, allowRiskyActions })
-  },
-  async getAgentPlans(): Promise<AgentExecutionPlan[]> {
-    return window.jarvis?.ai.getPlans() ?? []
-  },
-  async getAgentRuns(): Promise<AgentRunSummary[]> {
-    return window.jarvis?.ai.getRuns() ?? []
+    const d = desktopBridge()
+    if (!d) return null
+    return d.ai.executeIntent(input)
   },
   async getAiProviderSettings(): Promise<AiProviderSettings | null> {
-    return window.jarvis?.ai.getProviderSettings() ?? null
+    return desktopBridge()?.ai.getProviderSettings() ?? null
   },
   async updateAiProviderSettings(
     settings: Partial<AiProviderSettings>,
   ): Promise<AiProviderSettings | null> {
-    if (!window.jarvis) return null
-    return window.jarvis.ai.updateProviderSettings(settings)
+    const d = desktopBridge()
+    if (!d) return null
+    return d.ai.updateProviderSettings(settings)
   },
   async getAiProviderModels(): Promise<AiModelInfo[]> {
-    return window.jarvis?.ai.getProviderModels() ?? []
+    return desktopBridge()?.ai.getProviderModels() ?? []
   },
-  async getAiProviderStatus(): Promise<{ online: boolean; ollamaReachable: boolean } | null> {
-    return window.jarvis?.ai.getProviderStatus() ?? null
+  async getAiProviderStatus(): Promise<AiProviderRuntimeStatus | null> {
+    return desktopBridge()?.ai.getProviderStatus() ?? null
   },
   async getAiProviderMetrics(): Promise<AiProviderMetrics[]> {
-    return window.jarvis?.ai.getProviderMetrics() ?? []
-  },
-  async semanticMemorySearch(query: string): Promise<SemanticMemoryHit[]> {
-    if (!window.jarvis) return []
-    return window.jarvis.ai.searchMemorySemantically(query)
+    return desktopBridge()?.ai.getProviderMetrics() ?? []
   },
   async getOverlayState(): Promise<AssistantOverlayState | null> {
-    return window.jarvis?.ai.getOverlayState() ?? null
+    return desktopBridge()?.ai.getOverlayState() ?? null
   },
   async setOverlayVisible(visible: boolean): Promise<AssistantOverlayState | null> {
-    if (!window.jarvis) return null
-    return window.jarvis.ai.setOverlayVisible(visible)
+    const d = desktopBridge()
+    if (!d) return null
+    return d.ai.setOverlayVisible(visible)
   },
   async setOverlayDocked(docked: boolean): Promise<AssistantOverlayState | null> {
-    if (!window.jarvis) return null
-    return window.jarvis.ai.setOverlayDocked(docked)
+    const d = desktopBridge()
+    if (!d) return null
+    return d.ai.setOverlayDocked(docked)
   },
   async setOverlayVoiceMode(voiceMode: boolean): Promise<AssistantOverlayState | null> {
-    if (!window.jarvis) return null
-    return window.jarvis.ai.setOverlayVoiceMode(voiceMode)
+    const d = desktopBridge()
+    if (!d) return null
+    return d.ai.setOverlayVoiceMode(voiceMode)
   },
   async setOverlayQuickAutomation(enabled: boolean): Promise<AssistantOverlayState | null> {
-    if (!window.jarvis) return null
-    return window.jarvis.ai.setOverlayQuickAutomation(enabled)
+    const d = desktopBridge()
+    if (!d) return null
+    return d.ai.setOverlayQuickAutomation(enabled)
   },
   async getShortcutBindings(): Promise<GlobalShortcutBindings | null> {
-    return window.jarvis?.ai.getShortcutBindings() ?? null
+    return desktopBridge()?.ai.getShortcutBindings() ?? null
   },
   async setShortcutBindings(bindings: Partial<GlobalShortcutBindings>): Promise<GlobalShortcutBindings | null> {
-    if (!window.jarvis) return null
-    return window.jarvis.ai.setShortcutBindings(bindings)
+    const d = desktopBridge()
+    if (!d) return null
+    return d.ai.setShortcutBindings(bindings)
   },
   async getWorkspaceContext(): Promise<WorkspaceContext | null> {
-    return window.jarvis?.ai.getWorkspaceContext() ?? null
+    return desktopBridge()?.ai.getWorkspaceContext() ?? null
   },
   async searchCommandPalette(query: string): Promise<CommandPaletteItem[]> {
-    if (!window.jarvis) return []
-    return window.jarvis.ai.searchCommandPalette(query)
+    const d = desktopBridge()
+    if (!d) return []
+    return d.ai.searchCommandPalette(query)
   },
-  async getProjectContext(): Promise<ProjectContext | null> {
-    return window.jarvis?.ai.getProjectContext() ?? null
+  async startChatStream(input: ChatStartStreamInput): Promise<{ accepted: true } | null> {
+    const d = desktopBridge()
+    if (!d) {
+      console.warn('[JARVIS_IPC] startChatStream: no desktop bridge', {
+        hasJarvis: Boolean(window.jarvis),
+        hasElectron: Boolean(window.electron),
+      })
+      return null
+    }
+    console.info('[JARVIS_IPC] startChatStream invoke', input.streamId, 'chars=', input.input.length)
+    try {
+      const result = await d.ai.startChatStream(input)
+      console.info('[JARVIS_IPC] startChatStream resolved', result)
+      return result
+    } catch (err) {
+      console.error('[JARVIS_IPC] startChatStream invoke error', err)
+      throw err
+    }
   },
-  async analyzeTerminalOutput(text: string): Promise<TerminalAnalysisResult | null> {
-    if (!window.jarvis) return null
-    return window.jarvis.ai.analyzeTerminalOutput(text)
+  async cancelChatStream(streamId: string): Promise<{ cancelled: boolean } | null> {
+    const d = desktopBridge()
+    if (!d) return null
+    return d.ai.cancelChatStream(streamId)
   },
-  async analyzeUiUx(): Promise<UiUxAnalysisResult | null> {
-    if (!window.jarvis) return null
-    return window.jarvis.ai.analyzeUiUx()
+  onChatStreamEvent(listener: (event: ChatStreamEvent) => void): () => void {
+    const d = desktopBridge()
+    if (!d) return () => undefined
+    return d.ai.onChatStreamEvent(listener)
   },
-  async generateDevTasks(prompt: string): Promise<DevTask[]> {
-    if (!window.jarvis) return []
-    return window.jarvis.ai.generateDevTasks(prompt)
+  async getRecentCommands(): Promise<CommandLogRecord[]> {
+    return desktopBridge()?.memory.getRecentCommands() ?? []
   },
-  async getProductivityInsights(): Promise<ProductivityInsights | null> {
-    return window.jarvis?.ai.getProductivityInsights() ?? null
+  async getMemoryOverview(): Promise<MemoryOverview | null> {
+    return desktopBridge()?.memory.getOverview() ?? null
   },
-  async listSkills(): Promise<SkillDefinition[]> {
-    return window.jarvis?.ai.listSkills() ?? []
+  async getCommandStats(): Promise<CommandMemoryStats[]> {
+    return desktopBridge()?.memory.getCommandStats() ?? []
   },
-  async setSkillEnabled(skillId: string, enabled: boolean): Promise<SkillDefinition[]> {
-    if (!window.jarvis) return []
-    return window.jarvis.ai.setSkillEnabled({ skillId, enabled })
+  async getWorkflows(): Promise<WorkflowDefinition[]> {
+    return desktopBridge()?.memory.getWorkflows() ?? []
   },
-  async getSkillCapabilityOverview(): Promise<SkillCapabilityOverview | null> {
-    return window.jarvis?.ai.getSkillCapabilityOverview() ?? null
+  async getProjects(): Promise<ProjectMemory[]> {
+    return desktopBridge()?.memory.getProjects() ?? []
   },
-  async executeSkillTool(payload: { skillId: string; toolCommand: string; input?: string }) {
-    if (!window.jarvis) return { ok: false, message: 'Desktop bridge unavailable.' }
-    return window.jarvis.ai.executeSkillTool(payload)
+  async getSuggestions(): Promise<PersonalizationSuggestion[]> {
+    return desktopBridge()?.memory.getSuggestions() ?? []
   },
-  async reindexKnowledge() {
-    if (!window.jarvis) return { ok: false as const, indexed: 0 }
-    return window.jarvis.ai.reindexKnowledge()
+  async executeWorkflow(workflowId: string): Promise<{ ok: boolean; message: string } | null> {
+    const d = desktopBridge()
+    if (!d) return null
+    return d.memory.executeWorkflow(workflowId)
   },
+  async getWorkflowSchedules(): Promise<WorkflowSchedule[]> {
+    return desktopBridge()?.memory.getWorkflowSchedules() ?? []
+  },
+  async getWorkflowRuns(): Promise<WorkflowRunRecord[]> {
+    return desktopBridge()?.memory.getWorkflowRuns() ?? []
+  },
+  async generateWorkflowFromPrompt(prompt: string): Promise<WorkflowDefinition | null> {
+    const d = desktopBridge()
+    if (!d) return null
+    return d.memory.generateWorkflowFromPrompt(prompt)
+  },
+  async getRecentExecutionLogs(): Promise<ActivityLogRecord[]> {
+    return desktopBridge()?.execution.getRecentLogs() ?? []
+  },
+  async getRecentTasks(): Promise<AssistantTask[]> {
+    return desktopBridge()?.execution.getRecentTasks() ?? []
+  },
+  async transcribeAudio(input: VoiceTranscriptionInput): Promise<VoiceTranscriptionResult | null> {
+    const d = desktopBridge()
+    if (!d) return null
+    return d.voice.transcribe(input)
+  },
+  async captureScreen(source: 'full_screen' | 'active_window' = 'full_screen'): Promise<ScreenCaptureRecord | null> {
+    const d = desktopBridge()
+    if (!d) return null
+    return d.screen.capture(source)
+  },
+  async getActiveWindow(): Promise<ActiveWindowInfo | null> {
+    return desktopBridge()?.screen.getActiveWindow() ?? null
+  },
+  async analyzeLatestScreen(): Promise<ScreenAnalysisResult | null> {
+    const d = desktopBridge()
+    if (!d) return null
+    return d.screen.analyzeLatest()
+  },
+  async getScreenHistory(): Promise<ScreenAnalysisResult[]> {
+    return desktopBridge()?.screen.getHistory() ?? []
+  },
+
+  /**
+   * MVP memory search: substring match over recent shell commands (no vector DB).
+   */
+  async semanticMemorySearch(query: string): Promise<SemanticMemoryHit[]> {
+    const d = desktopBridge()
+    if (!d) return []
+    const q = query.trim().toLowerCase()
+    if (!q) return []
+    const records = await d.memory.getRecentCommands()
+    return records
+      .filter((r) => r.command.toLowerCase().includes(q))
+      .slice(0, 8)
+      .map((r) => ({
+        id: r.id,
+        kind: 'command' as const,
+        content: r.command,
+        score: 1,
+        createdAt: r.createdAt,
+      }))
+  },
+
+  // --- Stubs for legacy store imports (advanced features disabled in MVP) ---
   async getIndexingStatus(): Promise<IndexingStatus | null> {
-    return window.jarvis?.ai.getIndexingStatus() ?? null
+    return null
   },
-  async semanticKnowledgeSearch(payload: {
+  async reindexKnowledge(): Promise<{ ok: boolean; indexed: number }> {
+    return { ok: false, indexed: 0 }
+  },
+  async semanticKnowledgeSearch(_payload: {
     query: string
     limit?: number
     filter?: SemanticSearchFilter
   }): Promise<SemanticSearchResult[]> {
-    if (!window.jarvis) return []
-    return window.jarvis.ai.semanticKnowledgeSearch(payload)
+    void _payload
+    return []
   },
   async getKnowledgeGraph(): Promise<KnowledgeGraphSnapshot | null> {
-    return window.jarvis?.ai.getKnowledgeGraph() ?? null
+    return null
   },
   async retrieveContext(query: string): Promise<ContextRetrievalResult | null> {
-    if (!window.jarvis) return null
-    return window.jarvis.ai.retrieveContext(query)
+    void query
+    return null
   },
-  async runMultiAgentTask(goal: string): Promise<MultiAgentSession | null> {
-    if (!window.jarvis) return null
-    return window.jarvis.ai.runMultiAgentTask(goal)
+  async getProjectContext(): Promise<ProjectContext | null> {
+    return null
+  },
+  async getProductivityInsights(): Promise<ProductivityInsights | null> {
+    return null
+  },
+  async analyzeTerminalOutput(text: string): Promise<TerminalAnalysisResult | null> {
+    void text
+    return null
+  },
+  async analyzeUiUx(): Promise<UiUxAnalysisResult | null> {
+    return null
+  },
+  async generateDevTasks(_prompt: string): Promise<DevTask[]> {
+    void _prompt
+    return []
+  },
+  async listSkills(): Promise<SkillDefinition[]> {
+    return []
+  },
+  async setSkillEnabled(_payload: { skillId: string; enabled: boolean }): Promise<SkillDefinition[]> {
+    void _payload
+    return []
+  },
+  async getSkillCapabilityOverview(): Promise<SkillCapabilityOverview | null> {
+    return null
+  },
+  async executeSkillTool(_payload: {
+    skillId: string
+    toolCommand: string
+    input?: string
+  }): Promise<{ ok: boolean; message: string }> {
+    void _payload
+    return { ok: false, message: 'Skills are not available in the MVP build.' }
+  },
+  async getAgentPlans(): Promise<AgentExecutionPlan[]> {
+    return []
+  },
+  async getAgentRuns(): Promise<AgentRunSummary[]> {
+    return []
+  },
+  async planGoal(_goal: string): Promise<AgentExecutionPlan | null> {
+    void _goal
+    return null
+  },
+  async executePlan(_payload: { planId: string; allowRiskyActions?: boolean }): Promise<{
+    ok: boolean
+    message: string
+  } | null> {
+    void _payload
+    return { ok: false, message: 'Agent planner is not available in the MVP build.' }
+  },
+  async runMultiAgentTask(_goal: string): Promise<MultiAgentSession | null> {
+    void _goal
+    return null
   },
   async getMultiAgentSessions(): Promise<MultiAgentSession[]> {
-    return window.jarvis?.ai.getMultiAgentSessions() ?? []
+    return []
   },
   async getMultiAgentPerformance(): Promise<AgentPerformanceMetric[]> {
-    return window.jarvis?.ai.getMultiAgentPerformance() ?? []
+    return []
   },
   async getObservabilityEvents(): Promise<ObservabilityEvent[]> {
-    return window.jarvis?.ai.getObservabilityEvents() ?? []
+    return []
   },
   async getObservabilityNotifications(): Promise<ProactiveNotification[]> {
-    return window.jarvis?.ai.getObservabilityNotifications() ?? []
+    return []
   },
   async getObservabilitySnapshot(): Promise<ObservabilitySnapshot | null> {
-    return window.jarvis?.ai.getObservabilitySnapshot() ?? null
+    return null
   },
-  async markObservabilityNotificationRead(notificationId: string) {
-    if (!window.jarvis) return { ok: false as const }
-    return window.jarvis.ai.markObservabilityNotificationRead(notificationId)
+  async markObservabilityNotificationRead(_id: string): Promise<{ ok: boolean }> {
+    void _id
+    return { ok: false }
   },
   async getLearningFeedback(): Promise<LearningFeedbackRecord[]> {
-    return window.jarvis?.ai.getLearningFeedback() ?? []
+    return []
   },
   async getLearningPatterns(): Promise<BehaviorPattern[]> {
-    return window.jarvis?.ai.getLearningPatterns() ?? []
+    return []
   },
   async getLearningRecommendations(): Promise<AdaptiveRecommendation[]> {
-    return window.jarvis?.ai.getLearningRecommendations() ?? []
+    return []
   },
   async getLearningOptimizations(): Promise<WorkflowOptimizationInsight[]> {
-    return window.jarvis?.ai.getLearningOptimizations() ?? []
+    return []
   },
   async getLearningSnapshot(): Promise<LearningSnapshot | null> {
-    return window.jarvis?.ai.getLearningSnapshot() ?? null
+    return null
   },
   async refreshLearning(): Promise<LearningSnapshot | null> {
-    if (!window.jarvis) return null
-    return window.jarvis.ai.refreshLearning()
+    return null
   },
-  async setLearningRecommendationStatus(recommendationId: string, status: 'accepted' | 'dismissed') {
-    if (!window.jarvis) return { ok: false as const }
-    return window.jarvis.ai.setLearningRecommendationStatus({ recommendationId, status })
-  },
-  async startChatStream(input: ChatStartStreamInput): Promise<{ accepted: true } | null> {
-    if (!window.jarvis) return null
-    return window.jarvis.ai.startChatStream(input)
-  },
-  async cancelChatStream(streamId: string): Promise<{ cancelled: boolean } | null> {
-    if (!window.jarvis) return null
-    return window.jarvis.ai.cancelChatStream(streamId)
-  },
-  onChatStreamEvent(listener: (event: ChatStreamEvent) => void): () => void {
-    if (!window.jarvis) return () => undefined
-    return window.jarvis.ai.onChatStreamEvent(listener)
-  },
-  async getRecentCommands(): Promise<CommandLogRecord[]> {
-    return window.jarvis?.memory.getRecentCommands() ?? []
-  },
-  async getMemoryOverview(): Promise<MemoryOverview | null> {
-    return window.jarvis?.memory.getOverview() ?? null
-  },
-  async getCommandStats(): Promise<CommandMemoryStats[]> {
-    return window.jarvis?.memory.getCommandStats() ?? []
-  },
-  async getWorkflows(): Promise<WorkflowDefinition[]> {
-    return window.jarvis?.memory.getWorkflows() ?? []
-  },
-  async getProjects(): Promise<ProjectMemory[]> {
-    return window.jarvis?.memory.getProjects() ?? []
-  },
-  async getSuggestions(): Promise<PersonalizationSuggestion[]> {
-    return window.jarvis?.memory.getSuggestions() ?? []
-  },
-  async executeWorkflow(workflowId: string): Promise<{ ok: boolean; message: string } | null> {
-    if (!window.jarvis) return null
-    return window.jarvis.memory.executeWorkflow(workflowId)
-  },
-  async getWorkflowSchedules(): Promise<WorkflowSchedule[]> {
-    return window.jarvis?.memory.getWorkflowSchedules() ?? []
-  },
-  async getWorkflowRuns(): Promise<WorkflowRunRecord[]> {
-    return window.jarvis?.memory.getWorkflowRuns() ?? []
-  },
-  async generateWorkflowFromPrompt(prompt: string): Promise<WorkflowDefinition | null> {
-    if (!window.jarvis) return null
-    return window.jarvis.memory.generateWorkflowFromPrompt(prompt)
-  },
-  async getRecentExecutionLogs(): Promise<ActivityLogRecord[]> {
-    return window.jarvis?.execution.getRecentLogs() ?? []
-  },
-  async getRecentTasks(): Promise<AssistantTask[]> {
-    return window.jarvis?.execution.getRecentTasks() ?? []
-  },
-  async transcribeAudio(input: VoiceTranscriptionInput): Promise<VoiceTranscriptionResult | null> {
-    if (!window.jarvis) return null
-    return window.jarvis.voice.transcribe(input)
-  },
-  async captureScreen(source: 'full_screen' | 'active_window' = 'full_screen'): Promise<ScreenCaptureRecord | null> {
-    if (!window.jarvis) return null
-    return window.jarvis.screen.capture(source)
-  },
-  async getActiveWindow() {
-    return window.jarvis?.screen.getActiveWindow() ?? null
-  },
-  async analyzeLatestScreen(): Promise<ScreenAnalysisResult | null> {
-    if (!window.jarvis) return null
-    return window.jarvis.screen.analyzeLatest()
-  },
-  async getScreenHistory(): Promise<ScreenAnalysisResult[]> {
-    return window.jarvis?.screen.getHistory() ?? []
+  async setLearningRecommendationStatus(_payload: {
+    recommendationId: string
+    status: 'accepted' | 'dismissed'
+  }): Promise<{ ok: boolean }> {
+    void _payload
+    return { ok: false }
   },
 }

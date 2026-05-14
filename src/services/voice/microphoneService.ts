@@ -2,6 +2,20 @@ export interface RecordingSession {
   stop: () => Promise<{ audioBase64: string; mimeType: string }>
 }
 
+/** Ensures we never leave a MediaStream running if the user starts a new recording. */
+let activeMediaStream: MediaStream | null = null
+
+function stopActiveStreamTracks() {
+  if (!activeMediaStream) return
+  activeMediaStream.getTracks().forEach((track) => track.stop())
+  activeMediaStream = null
+}
+
+/** Call on errors or navigation so the mic LED never sticks on. */
+export function releaseMicrophoneHardStop() {
+  stopActiveStreamTracks()
+}
+
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -19,7 +33,11 @@ function blobToBase64(blob: Blob): Promise<string> {
 }
 
 export async function startMicrophoneRecording(): Promise<RecordingSession> {
+  stopActiveStreamTracks()
+
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+  activeMediaStream = stream
+
   const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
     ? 'audio/webm;codecs=opus'
     : 'audio/webm'
@@ -39,14 +57,24 @@ export async function startMicrophoneRecording(): Promise<RecordingSession> {
           try {
             const blob = new Blob(chunks, { type: mimeType })
             const audioBase64 = await blobToBase64(blob)
-            stream.getTracks().forEach((track) => track.stop())
+            stopActiveStreamTracks()
             resolve({ audioBase64, mimeType })
           } catch (error) {
+            stopActiveStreamTracks()
             reject(error)
           }
         }
-        recorder.onerror = () => reject(new Error('Microphone recorder error.'))
-        recorder.stop()
+        recorder.onerror = () => {
+          stopActiveStreamTracks()
+          reject(new Error('Microphone recorder error.'))
+        }
+        try {
+          if (recorder.state === 'recording') recorder.stop()
+          else stopActiveStreamTracks()
+        } catch {
+          stopActiveStreamTracks()
+          reject(new Error('Failed to stop microphone recorder.'))
+        }
       }),
   }
 }

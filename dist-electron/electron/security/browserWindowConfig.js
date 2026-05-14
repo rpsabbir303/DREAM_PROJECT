@@ -1,5 +1,20 @@
 import path from 'node:path';
-import { app } from 'electron';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+/**
+ * Absolute path to the compiled preload bundle.
+ * Must NOT use app.getAppPath() — in dev, `electron ./dist-electron/.../main/index.js` can make
+ * getAppPath() point at the wrong tree so preload never loads and `window.jarvis` / `window.electron` stay undefined.
+ */
+const SECURITY_DIR = path.dirname(fileURLToPath(import.meta.url));
+export const PRELOAD_ABSOLUTE_PATH = path.normalize(path.join(SECURITY_DIR, '..', 'preload', 'index.js'));
+export function logPreloadDiagnostics() {
+    console.info('[JARVIS_ELECTRON] preload path:', PRELOAD_ABSOLUTE_PATH);
+    console.info('[JARVIS_ELECTRON] preload exists:', existsSync(PRELOAD_ABSOLUTE_PATH));
+    if (!existsSync(PRELOAD_ABSOLUTE_PATH)) {
+        console.error('[JARVIS_ELECTRON] preload file missing — run `npm run build:electron`; window.jarvis will be undefined.');
+    }
+}
 /**
  * Single source of truth for BrowserWindow security posture.
  */
@@ -12,10 +27,12 @@ export function createSecureWindowConfig() {
         backgroundColor: '#070b14',
         show: false,
         webPreferences: {
-            preload: path.join(app.getAppPath(), 'dist-electron/electron/preload/index.js'),
+            preload: PRELOAD_ABSOLUTE_PATH,
             contextIsolation: true,
             nodeIntegration: false,
-            sandbox: true,
+            // Sandboxed preload + sibling ESM imports (shared/ipcChannels) often fails to bind `contextBridge`
+            // so `window.jarvis` stays undefined. Keep nodeIntegration off; disabling sandbox restores a reliable bridge.
+            sandbox: false,
             webSecurity: true,
             webviewTag: false,
             devTools: true,

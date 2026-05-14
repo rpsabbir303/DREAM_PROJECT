@@ -59,7 +59,7 @@ export const useLearningStore = create<LearningStore>((set, get) => ({
     await get().loadLearning()
   },
   setRecommendationStatus: async (recommendationId, status) => {
-    await desktopClient.setLearningRecommendationStatus(recommendationId, status)
+    await desktopClient.setLearningRecommendationStatus({ recommendationId, status })
     await get().loadLearning()
   },
 }))

@@ -1,130 +1,141 @@
 import { randomUUID } from 'node:crypto';
+import { BASIC_CHAT_SYSTEM_PROMPT } from '../../shared/ai/basicChatMvp.js';
 import { IPC_CHANNELS } from '../../shared/constants/ipcChannels.js';
-import { ExecutionManager } from '../system/executionManager.js';
-import { parseChatUnderstanding } from './chatIntentParser.js';
 import { getProviderStatus, routeProvider, streamWithProvider } from './providerRouter.js';
-import { createTaskFromUnderstanding } from './taskGenerator.js';
-import { parseIntent } from './intentParser.js';
+import { runJarvisOpenAiWithTools } from './openAiJarvisPipeline.js';
+import { runJarvisGeminiBasic } from './geminiJarvisPipeline.js';
+/**
+ * Basic MVP chat: one assistant reply per user turn via Gemini, OpenAI SDK, or Ollama (non-streaming).
+ * No tool execution, no voice, no agent orchestration in this path.
+ */
 export class ChatEngine {
     memoryRepository;
-    capabilityPromptProvider;
     activeStreams = new Map();
-    executionManager;
-    constructor(memoryRepository, capabilityPromptProvider) {
+    constructor(memoryRepository) {
         this.memoryRepository = memoryRepository;
-        this.capabilityPromptProvider = capabilityPromptProvider;
-        this.executionManager = new ExecutionManager(memoryRepository);
     }
     async startStream(input, sender) {
         const controller = new AbortController();
         this.activeStreams.set(input.streamId, controller);
-        sender.send(IPC_CHANNELS.aiChatStreamEvent, { streamId: input.streamId, type: 'start' });
-        const userMessage = this.memoryRepository.addChatMessage({ role: 'user', content: input.input });
-        const understanding = parseChatUnderstanding(input.input);
-        sender.send(IPC_CHANNELS.aiChatStreamEvent, {
-            streamId: input.streamId,
-            type: 'intent',
-            data: understanding,
-        });
-        const task = createTaskFromUnderstanding(understanding, this.memoryRepository);
-        if (task) {
-            sender.send(IPC_CHANNELS.aiChatStreamEvent, {
-                streamId: input.streamId,
-                type: 'task',
-                data: task,
-            });
-        }
-        if (task && understanding.actionRequired) {
-            const intent = parseIntent(input.input);
-            const result = await this.executionManager.runIntent(intent, {
-                taskId: task.id,
-                onTaskStatus: (status) => {
-                    sender.send(IPC_CHANNELS.aiChatStreamEvent, {
-                        streamId: input.streamId,
-                        type: 'task-status',
-                        data: { taskId: task.id, status },
-                    });
-                },
-            });
-            sender.send(IPC_CHANNELS.aiChatStreamEvent, {
-                streamId: input.streamId,
-                type: 'execution',
-                data: result,
-            });
-        }
-        const assistantSeed = this.buildSystemPrompt(understanding);
-        const screenContext = this.getScreenContextForInput(input.input);
-        const messages = [
-            {
-                id: randomUUID(),
-                role: 'system',
-                content: screenContext ? `${assistantSeed}\n${screenContext}` : assistantSeed,
-                createdAt: new Date().toISOString(),
-            },
-            ...input.history.slice(-12),
-            userMessage,
-        ];
-        const semanticHits = this.memoryRepository.semanticSearch(input.input, 4);
-        if (semanticHits.length > 0) {
-            messages.splice(1, 0, {
-                id: randomUUID(),
-                role: 'system',
-                content: `Relevant memory context:\n${semanticHits.map((hit) => `- ${hit.content}`).join('\n')}`,
-                createdAt: new Date().toISOString(),
-            });
-        }
-        const contextualHits = this.memoryRepository.semanticKnowledgeSearch(input.input, 4);
-        if (contextualHits.length > 0) {
-            messages.splice(1, 0, {
-                id: randomUUID(),
-                role: 'system',
-                content: `Indexed knowledge context:\n${contextualHits
-                    .map((hit) => `- (${hit.chunk.sourceType}) ${hit.chunk.content.slice(0, 180)}`)
-                    .join('\n')}`,
-                createdAt: new Date().toISOString(),
-            });
-        }
-        let finalText = '';
+        const emit = (event) => {
+            try {
+                if (sender.isDestroyed()) {
+                    console.warn('[JARVIS_AI] skip emit — sender destroyed:', event.type);
+                    return;
+                }
+                sender.send(IPC_CHANNELS.aiChatStreamEvent, event);
+            }
+            catch (err) {
+                console.warn('[JARVIS_AI] emit failed:', event.type, err);
+            }
+        };
         try {
+            emit({ streamId: input.streamId, type: 'start' });
+            console.info('[JARVIS_AI] chat turn start', input.streamId, 'chars=', input.input.length);
+            const userMessage = this.memoryRepository.addChatMessage({ role: 'user', content: input.input });
             const settings = this.memoryRepository.getAiSettings();
             const providerStatus = await getProviderStatus();
             const decision = routeProvider(input.input, settings, providerStatus.ollamaReachable);
-            sender.send(IPC_CHANNELS.aiChatStreamEvent, {
+            console.info('[JARVIS_AI] provider', decision.provider, decision.model, decision.reason);
+            emit({
                 streamId: input.streamId,
                 type: 'provider',
                 data: decision,
             });
-            const startedAt = Date.now();
-            finalText = await streamWithProvider({
-                decision,
-                messages,
-                signal: controller.signal,
-                onDelta: (chunk) => {
-                    sender.send(IPC_CHANNELS.aiChatStreamEvent, {
-                        streamId: input.streamId,
-                        type: 'delta',
-                        data: { chunk },
-                    });
+            const messages = [
+                {
+                    id: randomUUID(),
+                    role: 'system',
+                    content: BASIC_CHAT_SYSTEM_PROMPT,
+                    createdAt: new Date().toISOString(),
                 },
-            });
-            this.memoryRepository.addAiProviderMetric({
-                provider: decision.provider,
-                model: decision.model,
-                latencyMs: Date.now() - startedAt,
-                inputChars: input.input.length,
-                outputChars: finalText.length,
-                createdAt: new Date().toISOString(),
-            });
-            this.memoryRepository.addChatMessage({ role: 'assistant', content: finalText });
-            sender.send(IPC_CHANNELS.aiChatStreamEvent, {
-                streamId: input.streamId,
-                type: 'complete',
-                data: { finalText },
-            });
+                ...input.history.slice(-10),
+                userMessage,
+            ];
+            const startedAt = Date.now();
+            let finalText;
+            try {
+                if (decision.provider === 'gemini') {
+                    finalText = await runJarvisGeminiBasic({
+                        messages,
+                        model: decision.model,
+                        streamId: input.streamId,
+                        signal: controller.signal,
+                        onDelta: (chunk) => {
+                            emit({
+                                streamId: input.streamId,
+                                type: 'delta',
+                                data: { chunk },
+                            });
+                        },
+                    });
+                }
+                else if (decision.provider === 'openai') {
+                    finalText = await runJarvisOpenAiWithTools({
+                        messages,
+                        model: decision.model,
+                        streamId: input.streamId,
+                        signal: controller.signal,
+                        onDelta: (chunk) => {
+                            emit({
+                                streamId: input.streamId,
+                                type: 'delta',
+                                data: { chunk },
+                            });
+                        },
+                    });
+                }
+                else {
+                    finalText = await streamWithProvider({
+                        decision,
+                        messages,
+                        signal: controller.signal,
+                        onDelta: (chunk) => {
+                            emit({
+                                streamId: input.streamId,
+                                type: 'delta',
+                                data: { chunk },
+                            });
+                        },
+                    });
+                }
+                if (!finalText.trim()) {
+                    throw new Error(decision.provider === 'ollama' ?
+                        'The local model returned an empty reply. Check that Ollama is running and the model name is valid.'
+                        : decision.provider === 'gemini' ?
+                            'Gemini returned an empty reply. Check GEMINI_MODEL and API quotas.'
+                            : 'The model returned an empty reply.');
+                }
+                this.memoryRepository.addAiProviderMetric({
+                    provider: decision.provider,
+                    model: decision.model,
+                    latencyMs: Date.now() - startedAt,
+                    inputChars: input.input.length,
+                    outputChars: finalText.length,
+                    createdAt: new Date().toISOString(),
+                });
+                this.memoryRepository.addChatMessage({ role: 'assistant', content: finalText });
+                emit({
+                    streamId: input.streamId,
+                    type: 'complete',
+                    data: { finalText },
+                });
+                console.info('[JARVIS_AI] chat turn complete', input.streamId, 'outChars=', finalText.length);
+            }
+            catch (error) {
+                const message = error instanceof Error ? error.message : 'Unknown chat error';
+                console.error('[JARVIS_AI] chat LLM error', input.streamId, message, error);
+                emit({
+                    streamId: input.streamId,
+                    type: 'error',
+                    data: { message },
+                });
+            }
         }
         catch (error) {
-            const message = error instanceof Error ? error.message : 'Unknown chat error';
-            sender.send(IPC_CHANNELS.aiChatStreamEvent, {
+            const message = error instanceof Error ? error.message : 'Chat pipeline failed before LLM';
+            console.error('[JARVIS_AI] chat pipeline error', input.streamId, message, error);
+            emit({
                 streamId: input.streamId,
                 type: 'error',
                 data: { message },
@@ -141,30 +152,5 @@ export class ChatEngine {
         controller.abort();
         this.activeStreams.delete(streamId);
         return true;
-    }
-    buildSystemPrompt(intent) {
-        return [
-            'You are JARVIS, a concise desktop AI assistant.',
-            `Detected intent: ${intent.intent}.`,
-            `Action required: ${intent.actionRequired ? 'yes' : 'no'}.`,
-            'Respond clearly, include execution-safe guidance, and avoid dangerous commands.',
-            this.capabilityPromptProvider ? `Enabled skills and tools:\n${this.capabilityPromptProvider()}` : '',
-        ].join(' ');
-    }
-    getScreenContextForInput(input) {
-        const needsVisionContext = /(screen|visible|ui|dashboard|terminal output|error on my screen|what.*screen)/i.test(input);
-        if (!needsVisionContext)
-            return null;
-        const latest = this.memoryRepository.getRecentScreenAnalyses(1)[0];
-        if (!latest)
-            return 'No recent screen analysis available. Ask user to capture and analyze the screen first.';
-        return [
-            'Recent screen analysis context:',
-            `Summary: ${latest.summary}`,
-            `OCR snippet: ${latest.ocrText.slice(0, 600)}`,
-            latest.activeWindow ? `Active app: ${latest.activeWindow.app} (${latest.activeWindow.title})` : '',
-        ]
-            .filter(Boolean)
-            .join('\n');
     }
 }

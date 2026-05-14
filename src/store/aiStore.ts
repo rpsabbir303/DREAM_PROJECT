@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AiModelInfo, AiProviderMetrics, AiProviderSettings, ParsedIntent } from '@shared/interfaces/ipc'
+import type { AiModelInfo, AiProviderMetrics, AiProviderRuntimeStatus, AiProviderSettings, ParsedIntent } from '@shared/interfaces/ipc'
 import { desktopClient } from '@/services/desktop/desktopClient'
 
 interface AiStore {
@@ -8,7 +8,7 @@ interface AiStore {
   providerSettings: AiProviderSettings | null
   localModels: AiModelInfo[]
   providerMetrics: AiProviderMetrics[]
-  offlineStatus: { online: boolean; ollamaReachable: boolean } | null
+  offlineStatus: AiProviderRuntimeStatus | null
   loadProviderContext: () => Promise<void>
   parseInput: (input: string) => Promise<void>
   executeInput: (input: string) => Promise<void>

@@ -6,6 +6,8 @@ export function createTaskFromUnderstanding(
   memoryRepository: MemoryRepository,
 ): AssistantTask | null {
   if (!understanding.actionRequired) return null
+  if (understanding.riskLevel === 'blocked') return null
+  if (understanding.ambiguity === 'high') return null
 
   const title =
     understanding.target && understanding.target.length > 0

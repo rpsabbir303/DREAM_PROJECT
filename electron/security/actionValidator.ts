@@ -1,45 +1,42 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { ParsedIntent } from '../../shared/interfaces/ipc.js'
-
-const SAFE_COMMANDS = new Set(['ls', 'pwd', 'git status', 'npm run dev'])
-const DANGEROUS_PATTERNS = [
-  /rm\s+-rf/i,
-  /rmdir\s+\/s/i,
-  /format\s+/i,
-  /reg\s+add/i,
-  /del\s+\/f/i,
-  /shutdown/i,
-]
+import { containsDangerousShellPattern, isSafeTerminalCommand } from './executionPolicy.js'
+import { expandUserPathAlias } from '../system/userPathAliases.js'
 
 function isAllowedHttpUrl(value: string) {
   return /^https?:\/\//i.test(value.trim())
 }
 
 function isValidExistingPath(raw: string) {
-  const normalized = path.resolve(raw)
+  const normalized = path.resolve(expandUserPathAlias(raw))
   return fs.existsSync(normalized)
 }
 
+/**
+ * Validates a parsed intent **before** touching the shell or filesystem openers.
+ */
 export function validateIntent(intent: ParsedIntent): { ok: boolean; reason?: string } {
   const target = intent.target.trim()
 
   if (intent.intent === 'open_url') {
     if (!isAllowedHttpUrl(target)) return { ok: false, reason: 'Only http/https URLs are allowed.' }
+    if (containsDangerousShellPattern(target)) return { ok: false, reason: 'URL looks suspicious.' }
     return { ok: true }
   }
 
   if (intent.intent === 'open_folder' || intent.intent === 'open_project') {
-    if (!isValidExistingPath(target)) return { ok: false, reason: 'Path does not exist on disk.' }
+    const expanded = expandUserPathAlias(target)
+    if (!isValidExistingPath(expanded)) return { ok: false, reason: 'Path does not exist on disk.' }
     return { ok: true }
   }
 
   if (intent.intent === 'run_safe_command') {
-    for (const pattern of DANGEROUS_PATTERNS) {
-      if (pattern.test(target)) return { ok: false, reason: 'Dangerous command pattern blocked.' }
+    if (containsDangerousShellPattern(target)) {
+      return { ok: false, reason: 'Dangerous command pattern blocked.' }
     }
-    if (!SAFE_COMMANDS.has(target.toLowerCase())) {
-      return { ok: false, reason: 'Command is not in the whitelist.' }
+    if (!isSafeTerminalCommand(target)) {
+      return { ok: false, reason: 'Command is not in the MVP safe whitelist.' }
     }
     return { ok: true }
   }

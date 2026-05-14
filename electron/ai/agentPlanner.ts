@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import type { AgentExecutionPlan, AgentPlanStep, ExecutionActionType } from '../../shared/interfaces/ipc.js'
+import { getEffectiveOpenAiApiKey, readProcessEnv } from './openAiEnv.js'
 
 const planSchema = z.object({
   reasoning: z.string().min(5),
@@ -19,14 +20,9 @@ const planSchema = z.object({
     .max(12),
 })
 
-function readEnv(name: string) {
-  const value = process.env[name]
-  return value && value.trim().length > 0 ? value.trim() : null
-}
-
 export async function planGoalWithOpenAi(goal: string): Promise<AgentExecutionPlan> {
-  const apiKey = readEnv('OPENAI_API_KEY')
-  const model = readEnv('OPENAI_PLANNER_MODEL') ?? readEnv('OPENAI_MODEL') ?? 'gpt-4o-mini'
+  const apiKey = getEffectiveOpenAiApiKey()
+  const model = readProcessEnv('OPENAI_PLANNER_MODEL') ?? readProcessEnv('OPENAI_MODEL') ?? 'gpt-4o-mini'
   const now = new Date().toISOString()
 
   if (!apiKey) return fallbackPlan(goal, now)

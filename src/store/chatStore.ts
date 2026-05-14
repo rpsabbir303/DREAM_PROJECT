@@ -5,15 +5,88 @@ import type {
   ChatMessage,
   ChatStreamEvent,
   CommandUnderstanding,
+  ExecutionResult,
 } from '@shared/interfaces/ipc'
 import { desktopClient } from '@/services/desktop/desktopClient'
 import { usePersonalizationStore } from '@/store/personalizationStore'
+
+const MAX_CHAT_MESSAGES = 100
+
+/** Batches token deltas to one Zustand update per animation frame (smoother UI, less GC). */
+let pendingDeltaText = ''
+let deltaFlushRaf: number | null = null
+
+function cancelDeltaFlush() {
+  if (deltaFlushRaf !== null) {
+    cancelAnimationFrame(deltaFlushRaf)
+    deltaFlushRaf = null
+  }
+}
+
+function resetDeltaBuffer() {
+  cancelDeltaFlush()
+  pendingDeltaText = ''
+}
+
+function appendToLastAssistant(messages: ChatMessage[], chunk: string): ChatMessage[] {
+  const next = [...messages]
+  const lastAssistantIndex = [...next].reverse().findIndex((m) => m.role === 'assistant')
+  if (lastAssistantIndex === -1) return next
+  const index = next.length - 1 - lastAssistantIndex
+  next[index] = {
+    ...next[index],
+    content: `${next[index].content}${chunk}`,
+  }
+  return next
+}
+
+function scheduleDeltaFlush(
+  set: (partial: Partial<ChatStore> | ((state: ChatStore) => Partial<ChatStore>)) => void,
+) {
+  if (deltaFlushRaf !== null) return
+  deltaFlushRaf = requestAnimationFrame(() => {
+    deltaFlushRaf = null
+    const batch = pendingDeltaText
+    pendingDeltaText = ''
+    if (!batch) return
+    set((state) => ({
+      messages: appendToLastAssistant(state.messages, batch),
+      isStreaming: true,
+      isThinking: false,
+    }))
+  })
+}
+
+/** Applies any queued deltas synchronously (before complete / error / new stream). */
+function flushPendingDeltasSync(
+  set: (partial: Partial<ChatStore> | ((state: ChatStore) => Partial<ChatStore>)) => void,
+) {
+  cancelDeltaFlush()
+  const batch = pendingDeltaText
+  pendingDeltaText = ''
+  if (!batch) return
+  set((state) => ({
+    messages: appendToLastAssistant(state.messages, batch),
+    isStreaming: true,
+    isThinking: false,
+  }))
+}
+
+interface ToolStep {
+  name: string
+  summary: string
+  ok: boolean
+}
 
 interface ChatStore {
   messages: ChatMessage[]
   tasks: AssistantTask[]
   latestUnderstanding: CommandUnderstanding | null
   providerDecision: AiRoutingDecision | null
+  /** Last model tool invocations for this stream (OpenAI tools path). */
+  recentToolSteps: ToolStep[]
+  /** Last desktop execution result (for compact feedback under the transcript). */
+  lastExecution: ExecutionResult | null
   inputValue: string
   isStreaming: boolean
   isThinking: boolean
@@ -34,6 +107,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   tasks: [],
   latestUnderstanding: null,
   providerDecision: null,
+  recentToolSteps: [],
+  lastExecution: null,
   inputValue: '',
   isStreaming: false,
   isThinking: false,
@@ -57,6 +132,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const content = input.trim()
     if (!content) return
 
+    if (get().isThinking || get().isStreaming) {
+      console.warn('[JARVIS_UI] sendMessage ignored — turn already in progress')
+      return
+    }
+
+    const priorMessages = get().messages
     const streamId = crypto.randomUUID()
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
@@ -71,20 +152,52 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       createdAt: nowIso(),
     }
 
-    set((state) => ({
-      messages: [...state.messages, userMessage, assistantPlaceholder],
+    resetDeltaBuffer()
+
+    set({
+      messages: [...priorMessages, userMessage, assistantPlaceholder],
       inputValue: '',
       activeStreamId: streamId,
       isThinking: true,
       isStreaming: false,
       error: null,
-    }))
-
-    await desktopClient.startChatStream({
-      streamId,
-      input: content,
-      history: get().messages,
+      recentToolSteps: [],
     })
+
+    try {
+      console.info('[JARVIS_UI] sendMessage → startChatStream', streamId)
+      const accepted = await desktopClient.startChatStream({
+        streamId,
+        input: content,
+        history: priorMessages.slice(-24),
+      })
+      if (accepted == null) {
+        throw new Error(
+          'Desktop bridge unavailable — preload did not expose window.jarvis (see terminal [JARVIS_PRELOAD] / [JARVIS_ELECTRON]). Use `npm run dev` in Electron, not a browser tab.',
+        )
+      }
+      console.info('[JARVIS_UI] startChatStream accepted; awaiting stream events', streamId)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Chat request failed.'
+      resetDeltaBuffer()
+      set((state) => {
+        const messages = [...state.messages]
+        const last = messages[messages.length - 1]
+        if (last?.role === 'assistant') {
+          messages[messages.length - 1] = {
+            ...last,
+            content: last.content.trim() ? last.content : `Could not reach the assistant: ${message}`,
+          }
+        }
+        return {
+          messages,
+          isThinking: false,
+          isStreaming: false,
+          activeStreamId: null,
+          error: message,
+        }
+      })
+    }
   },
 }))
 
@@ -93,7 +206,8 @@ function handleStreamEvent(
   set: (partial: Partial<ChatStore> | ((state: ChatStore) => Partial<ChatStore>)) => void,
 ) {
   if (event.type === 'start') {
-    set({ isThinking: true, isStreaming: false, error: null })
+    resetDeltaBuffer()
+    set({ isThinking: true, isStreaming: false, error: null, recentToolSteps: [], lastExecution: null })
     return
   }
 
@@ -122,31 +236,71 @@ function handleStreamEvent(
   }
 
   if (event.type === 'execution') {
-    if (!event.data.ok) set({ error: event.data.message })
-    return
-  }
-
-  if (event.type === 'delta') {
-    set((state) => {
-      const messages = [...state.messages]
-      const lastAssistantIndex = [...messages].reverse().findIndex((message) => message.role === 'assistant')
-      if (lastAssistantIndex === -1) return { isStreaming: true, isThinking: false }
-      const index = messages.length - 1 - lastAssistantIndex
-      messages[index] = {
-        ...messages[index],
-        content: `${messages[index].content}${event.data.chunk}`,
-      }
-      return { messages, isStreaming: true, isThinking: false }
+    set({
+      lastExecution: event.data,
+      error: event.data.ok ? null : event.data.message,
     })
     return
   }
 
+  if (event.type === 'tool-use') {
+    set((state) => ({
+      recentToolSteps: [
+        { name: event.data.name, summary: event.data.summary, ok: event.data.ok },
+        ...state.recentToolSteps,
+      ].slice(0, 8),
+    }))
+    return
+  }
+
+  if (event.type === 'delta') {
+    pendingDeltaText += event.data.chunk
+    scheduleDeltaFlush(set)
+    return
+  }
+
   if (event.type === 'complete') {
-    set({ isThinking: false, isStreaming: false, activeStreamId: null })
+    flushPendingDeltasSync(set)
+    const finalText = event.data.finalText?.trim() ?? ''
+    console.info('[JARVIS_UI] stream complete', event.streamId, 'finalLen=', finalText.length)
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last?.role === 'assistant' && !last.content.trim() && finalText) {
+        messages[messages.length - 1] = { ...last, content: finalText }
+      }
+      return {
+        isThinking: false,
+        isStreaming: false,
+        activeStreamId: null,
+        messages:
+          messages.length > MAX_CHAT_MESSAGES ? messages.slice(-MAX_CHAT_MESSAGES) : messages,
+      }
+    })
     return
   }
 
   if (event.type === 'error') {
-    set({ error: event.data.message, isThinking: false, isStreaming: false, activeStreamId: null })
+    flushPendingDeltasSync(set)
+    const msg = event.data.message
+    console.error('[JARVIS_UI] stream error', event.streamId, msg)
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last?.role === 'assistant') {
+        const existing = last.content.trim()
+        messages[messages.length - 1] = {
+          ...last,
+          content: existing ? `${existing}\n\n_${msg}_` : `Something went wrong: ${msg}`,
+        }
+      }
+      return {
+        messages,
+        error: msg,
+        isThinking: false,
+        isStreaming: false,
+        activeStreamId: null,
+      }
+    })
   }
 }

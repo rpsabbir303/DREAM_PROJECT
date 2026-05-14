@@ -1,8 +1,6 @@
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import { IPC_CHANNELS } from '../../shared/constants/ipcChannels.js';
-import { planGoalWithOpenAi } from '../ai/agentPlanner.js';
-import { AgentOrchestrator } from '../automation/agentOrchestrator.js';
 import { WorkflowEngine } from '../automation/workflowEngine.js';
 import { ChatEngine } from '../ai/chatEngine.js';
 import { CommandEngine } from '../ai/commandEngine.js';
@@ -12,14 +10,8 @@ import { analyzeCapture } from '../vision/screenAnalysisService.js';
 import { captureScreen } from '../vision/screenCaptureService.js';
 import { getProviderModels, getProviderStatus } from '../ai/providerRouter.js';
 import { searchCommandPalette } from '../overlay/commandPaletteService.js';
-import { analyzeTerminalOutput } from '../productivity/terminalIntelligenceService.js';
-import { analyzeUiUxFromMemory } from '../productivity/uiUxAnalysisService.js';
-import { detectProjectContext } from '../productivity/projectContextService.js';
-import { generateDeveloperTasks } from '../productivity/taskGenerationService.js';
-import { buildProductivityInsights } from '../productivity/productivityService.js';
-import { retrieveContext } from '../knowledge/retrievalEngine.js';
 const chatStartInputSchema = z.object({
-    streamId: z.string().uuid(),
+    streamId: z.string().min(8).max(80),
     input: z.string().min(1).max(4000),
     history: z
         .array(z.object({
@@ -31,51 +23,25 @@ const chatStartInputSchema = z.object({
         .max(50),
 });
 const workflowPromptSchema = z.string().min(6).max(500);
-const agentGoalSchema = z.string().min(6).max(1000);
-const voiceTranscribeInputSchema = z.object({
-    audioBase64: z.string().min(12),
-    mimeType: z.string().min(4).max(80),
-});
 const aiSettingsUpdateSchema = z.object({
-    preferredProvider: z.enum(['openai', 'ollama']).optional(),
+    preferredProvider: z.enum(['openai', 'ollama', 'gemini']).optional(),
     offlineMode: z.boolean().optional(),
     localModel: z.string().min(1).max(120).optional(),
     cloudModel: z.string().min(1).max(120).optional(),
     reasoningThreshold: z.number().int().min(40).max(2000).optional(),
 });
 /**
- * Centralized IPC registration keeps renderer-main communication explicit and typed.
+ * MVP IPC surface: chat, intents, execution, memory, workflows, overlay, voice, screen, system.
  */
-export function registerIpcHandlers({ memoryRepository, assistantEnvironment, pluginManager, knowledgeScheduler, multiAgentCoordinator, learningOrchestrator, }) {
+export function registerIpcHandlers({ memoryRepository, assistantEnvironment, }) {
     const commandEngine = new CommandEngine(memoryRepository);
-    const chatEngine = new ChatEngine(memoryRepository, () => pluginManager.getCapabilityPromptSnippet());
+    const chatEngine = new ChatEngine(memoryRepository);
     const workflowEngine = new WorkflowEngine(memoryRepository);
-    const agentOrchestrator = new AgentOrchestrator(memoryRepository);
     ipcMain.handle(IPC_CHANNELS.systemSnapshot, async () => {
         return getSystemSnapshot();
     });
-    const terminalInputSchema = z.string().min(1).max(400000);
-    const devTaskPromptSchema = z.string().min(6).max(3000);
     ipcMain.handle(IPC_CHANNELS.parseIntent, async (_event, userInput) => {
         return commandEngine.parse(userInput);
-    });
-    ipcMain.handle(IPC_CHANNELS.agentPlanGoal, async (_event, goal) => {
-        const validatedGoal = agentGoalSchema.parse(goal);
-        const plan = await planGoalWithOpenAi(validatedGoal);
-        memoryRepository.saveAgentPlan(plan);
-        memoryRepository.updateAgentPlanState(plan.id, 'planning');
-        return plan;
-    });
-    ipcMain.handle(IPC_CHANNELS.agentExecutePlan, async (_event, payload) => {
-        return agentOrchestrator.executePlan(payload.planId, {
-            allowRiskyActions: payload.allowRiskyActions ?? false,
-        });
-    });
-    ipcMain.handle(IPC_CHANNELS.agentPlans, async () => {
-        return memoryRepository.getAgentPlans(40);
-    });
-    ipcMain.handle(IPC_CHANNELS.agentRuns, async () => {
-        return memoryRepository.getAgentRuns(80);
     });
     ipcMain.handle(IPC_CHANNELS.aiProviderSettingsGet, async () => {
         return memoryRepository.getAiSettings();
@@ -93,9 +59,6 @@ export function registerIpcHandlers({ memoryRepository, assistantEnvironment, pl
     });
     ipcMain.handle(IPC_CHANNELS.aiProviderMetrics, async () => {
         return memoryRepository.getAiProviderMetrics(80);
-    });
-    ipcMain.handle(IPC_CHANNELS.memorySemanticSearch, async (_event, query) => {
-        return memoryRepository.semanticSearch(query, 8);
     });
     ipcMain.handle(IPC_CHANNELS.overlayGetState, async () => {
         return assistantEnvironment.getOverlayState();
@@ -123,92 +86,6 @@ export function registerIpcHandlers({ memoryRepository, assistantEnvironment, pl
     });
     ipcMain.handle(IPC_CHANNELS.overlayCommandPaletteSearch, async (_event, query) => {
         return searchCommandPalette(memoryRepository, query);
-    });
-    ipcMain.handle(IPC_CHANNELS.productivityProjectContext, async () => {
-        return detectProjectContext(process.cwd());
-    });
-    ipcMain.handle(IPC_CHANNELS.productivityAnalyzeTerminal, async (_event, text) => {
-        return analyzeTerminalOutput(terminalInputSchema.parse(text));
-    });
-    ipcMain.handle(IPC_CHANNELS.productivityAnalyzeUiUx, async () => {
-        return analyzeUiUxFromMemory(memoryRepository);
-    });
-    ipcMain.handle(IPC_CHANNELS.productivityGenerateTasks, async (_event, prompt) => {
-        return generateDeveloperTasks(devTaskPromptSchema.parse(prompt));
-    });
-    ipcMain.handle(IPC_CHANNELS.productivityInsights, async () => {
-        return buildProductivityInsights(memoryRepository, process.cwd());
-    });
-    ipcMain.handle(IPC_CHANNELS.skillList, async () => {
-        return pluginManager.listSkills();
-    });
-    ipcMain.handle(IPC_CHANNELS.skillSetEnabled, async (_event, payload) => {
-        return pluginManager.setSkillEnabled(payload.skillId, payload.enabled);
-    });
-    ipcMain.handle(IPC_CHANNELS.skillCapabilityOverview, async () => {
-        return pluginManager.getCapabilityOverview();
-    });
-    ipcMain.handle(IPC_CHANNELS.skillToolsExecute, async (_event, payload) => {
-        return pluginManager.executeTool(payload);
-    });
-    ipcMain.handle(IPC_CHANNELS.knowledgeReindex, async () => {
-        return knowledgeScheduler.reindex();
-    });
-    ipcMain.handle(IPC_CHANNELS.knowledgeIndexingStatus, async () => {
-        return memoryRepository.getIndexingStatus();
-    });
-    ipcMain.handle(IPC_CHANNELS.knowledgeSemanticSearch, async (_event, payload) => {
-        return memoryRepository.semanticKnowledgeSearch(payload.query, payload.limit ?? 10, payload.filter);
-    });
-    ipcMain.handle(IPC_CHANNELS.knowledgeGraph, async () => {
-        return memoryRepository.getKnowledgeGraphSnapshot(300);
-    });
-    ipcMain.handle(IPC_CHANNELS.knowledgeContextRetrieve, async (_event, query) => {
-        return retrieveContext(memoryRepository, query);
-    });
-    ipcMain.handle(IPC_CHANNELS.multiAgentRun, async (_event, goal) => {
-        return multiAgentCoordinator.run(goal);
-    });
-    ipcMain.handle(IPC_CHANNELS.multiAgentSessions, async () => {
-        return multiAgentCoordinator.listSessions();
-    });
-    ipcMain.handle(IPC_CHANNELS.multiAgentPerformance, async () => {
-        return multiAgentCoordinator.getPerformanceMetrics();
-    });
-    ipcMain.handle(IPC_CHANNELS.observabilityEvents, async () => {
-        return memoryRepository.getRecentObservabilityEvents(160);
-    });
-    ipcMain.handle(IPC_CHANNELS.observabilityNotifications, async () => {
-        return memoryRepository.getRecentProactiveNotifications(100);
-    });
-    ipcMain.handle(IPC_CHANNELS.observabilitySnapshot, async () => {
-        return memoryRepository.getObservabilitySnapshot();
-    });
-    ipcMain.handle(IPC_CHANNELS.observabilityMarkNotificationRead, async (_event, notificationId) => {
-        memoryRepository.markProactiveNotificationRead(notificationId);
-        return { ok: true };
-    });
-    ipcMain.handle(IPC_CHANNELS.learningFeedback, async () => {
-        return memoryRepository.getLearningFeedback(200);
-    });
-    ipcMain.handle(IPC_CHANNELS.learningPatterns, async () => {
-        return memoryRepository.getBehaviorPatterns(80);
-    });
-    ipcMain.handle(IPC_CHANNELS.learningRecommendations, async () => {
-        return memoryRepository.getAdaptiveRecommendations(80);
-    });
-    ipcMain.handle(IPC_CHANNELS.learningOptimizations, async () => {
-        return memoryRepository.getWorkflowOptimizationInsights(80);
-    });
-    ipcMain.handle(IPC_CHANNELS.learningSnapshot, async () => {
-        return memoryRepository.getLearningSnapshot();
-    });
-    ipcMain.handle(IPC_CHANNELS.learningRefresh, async () => {
-        return learningOrchestrator.refresh();
-    });
-    ipcMain.handle(IPC_CHANNELS.learningSetRecommendationStatus, async (_event, payload) => {
-        memoryRepository.setRecommendationStatus(payload.recommendationId, payload.status);
-        return { ok: true };
     });
     ipcMain.handle(IPC_CHANNELS.executeIntent, async (_event, userInput) => {
         return commandEngine.handle(userInput);
@@ -251,17 +128,33 @@ export function registerIpcHandlers({ memoryRepository, assistantEnvironment, pl
         return memoryRepository.getRecentTasks(40);
     });
     ipcMain.handle(IPC_CHANNELS.aiChatStartStream, async (event, payload) => {
-        const parsed = chatStartInputSchema.parse(payload);
-        void chatEngine.startStream(parsed, event.sender);
+        const parsed = chatStartInputSchema.safeParse(payload);
+        if (!parsed.success) {
+            const sid = payload && typeof payload === 'object' && 'streamId' in payload && typeof payload.streamId === 'string'
+                ? payload.streamId
+                : undefined;
+            const msg = parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ') ||
+                parsed.error.message;
+            console.warn('[JARVIS_AI] aiChatStartStream validation failed:', msg, payload);
+            if (sid && !event.sender.isDestroyed()) {
+                event.sender.send(IPC_CHANNELS.aiChatStreamEvent, {
+                    streamId: sid,
+                    type: 'error',
+                    data: { message: `Invalid chat request: ${msg}` },
+                });
+            }
+            throw parsed.error;
+        }
+        console.info('[JARVIS_IPC] aiChatStartStream accepted', parsed.data.streamId, 'len=', parsed.data.input.length);
+        await chatEngine.startStream(parsed.data, event.sender);
         return { accepted: true };
     });
     ipcMain.handle(IPC_CHANNELS.aiChatCancelStream, async (_event, streamId) => {
         return { cancelled: chatEngine.cancelStream(streamId) };
     });
-    ipcMain.handle(IPC_CHANNELS.voiceTranscribe, async (_event, payload) => {
-        const parsed = voiceTranscribeInputSchema.parse(payload);
-        const { transcribeAudioWithWhisper } = await import('../ai/providers/whisperProvider.js');
-        return transcribeAudioWithWhisper(parsed);
+    ipcMain.handle(IPC_CHANNELS.voiceTranscribe, async () => {
+        console.warn('[JARVIS_VOICE] voiceTranscribe IPC disabled — text chat MVP (no Whisper)');
+        return { text: '', durationMs: 0 };
     });
     ipcMain.handle(IPC_CHANNELS.screenCapture, async (_event, source) => {
         return captureScreen(source ?? 'full_screen');

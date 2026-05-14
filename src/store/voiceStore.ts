@@ -1,8 +1,18 @@
 import { create } from 'zustand'
 import { desktopClient } from '@/services/desktop/desktopClient'
-import { startMicrophoneRecording, type RecordingSession } from '@/services/voice/microphoneService'
+import {
+  releaseMicrophoneHardStop,
+  startMicrophoneRecording,
+  type RecordingSession,
+} from '@/services/voice/microphoneService'
 import { speakText, stopSpeaking } from '@/services/voice/speechSynthesisService'
 import { useChatStore } from '@/store/chatStore'
+
+/**
+ * Flip to `true` to re-enable microphone capture, Whisper transcription, and TTS on chat `complete`.
+ * Kept `false` while stabilizing text-only chat (avoids stuck "Listening…" / mic loops).
+ */
+export const VOICE_INPUT_ENABLED = false
 
 interface VoiceStore {
   isListening: boolean
@@ -28,14 +38,20 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
   microphonePermission: 'unknown',
   transcriptionText: '',
   error: null,
-  autoSpeakResponses: true,
+  autoSpeakResponses: false,
   initialized: false,
   startListening: async () => {
+    if (!VOICE_INPUT_ENABLED) {
+      console.info('[JARVIS_VOICE] startListening skipped (voice disabled)')
+      return
+    }
     if (get().isListening) return
+    releaseMicrophoneHardStop()
     try {
       recordingSession = await startMicrophoneRecording()
       set({ isListening: true, microphonePermission: 'granted', error: null })
     } catch (error) {
+      recordingSession = null
       set({
         isListening: false,
         microphonePermission: 'denied',
@@ -44,6 +60,13 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
     }
   },
   stopListening: async () => {
+    if (!VOICE_INPUT_ENABLED) {
+      releaseMicrophoneHardStop()
+      recordingSession = null
+      set({ isListening: false, isTranscribing: false, error: null })
+      console.info('[JARVIS_VOICE] stopListening — voice disabled, state cleared')
+      return
+    }
     if (!recordingSession || !get().isListening) return
     set({ isListening: false, isTranscribing: true })
     try {
@@ -56,6 +79,8 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
         await useChatStore.getState().sendMessage(text)
       }
     } catch (error) {
+      recordingSession = null
+      releaseMicrophoneHardStop()
       set({
         isTranscribing: false,
         error: error instanceof Error ? error.message : 'Voice transcription failed.',
@@ -69,17 +94,43 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
   initializeVoiceListener: () => {
     if (get().initialized) return
 
-    desktopClient.onChatStreamEvent(async (event) => {
+    stopSpeaking()
+    releaseMicrophoneHardStop()
+    recordingSession = null
+    set({
+      isListening: false,
+      isTranscribing: false,
+      isSpeaking: false,
+      autoSpeakResponses: false,
+      error: null,
+    })
+
+    if (!VOICE_INPUT_ENABLED) {
+      console.info('[JARVIS_VOICE] pipeline disabled — text chat only (no mic / Whisper / TTS)')
+      set({ initialized: true })
+      return
+    }
+
+    desktopClient.onChatStreamEvent((event) => {
+      if (event.type === 'start') {
+        stopSpeaking()
+        set({ isSpeaking: false })
+        return
+      }
       if (event.type !== 'complete') return
       if (!get().autoSpeakResponses) return
-      try {
-        set({ isSpeaking: true })
-        await speakText(event.data.finalText)
-      } catch (error) {
-        set({ error: error instanceof Error ? error.message : 'TTS playback failed.' })
-      } finally {
-        set({ isSpeaking: false })
-      }
+
+      queueMicrotask(async () => {
+        if (!get().autoSpeakResponses) return
+        try {
+          set({ isSpeaking: true })
+          await speakText(event.data.finalText)
+        } catch (error) {
+          set({ error: error instanceof Error ? error.message : 'TTS playback failed.' })
+        } finally {
+          set({ isSpeaking: false })
+        }
+      })
     })
 
     set({ initialized: true })

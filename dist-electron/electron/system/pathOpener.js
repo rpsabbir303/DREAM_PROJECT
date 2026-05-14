@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { shell } from 'electron';
+import { expandUserPathAlias } from './userPathAliases.js';
 export async function openPathTarget(target) {
-    const resolved = path.resolve(target);
+    const expanded = expandUserPathAlias(target);
+    const resolved = path.resolve(expanded);
     if (!fs.existsSync(resolved)) {
         return {
             ok: false,
@@ -27,18 +29,19 @@ export async function openPathTarget(target) {
     };
 }
 export async function openUrlTarget(target) {
-    if (!/^https?:\/\//i.test(target)) {
+    const trimmed = target.trim();
+    if (!/^https?:\/\//i.test(trimmed)) {
         return {
             ok: false,
             actionType: 'open_url',
-            message: `Blocked URL: ${target}`,
+            message: `Blocked URL (only http/https): ${trimmed}`,
             error: 'invalid_url',
         };
     }
-    await shell.openExternal(target);
+    await shell.openExternal(trimmed);
     return {
         ok: true,
         actionType: 'open_url',
-        message: `Opened URL: ${target}`,
+        message: `Opened URL: ${trimmed}`,
     };
 }

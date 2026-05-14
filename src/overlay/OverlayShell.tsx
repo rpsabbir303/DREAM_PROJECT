@@ -62,7 +62,7 @@ export function OverlayShell() {
           </p>
         )}
         <p className="mt-1 text-xs text-white/60">Knowledge chunks: {indexingStatus?.indexedChunkCount ?? 0}</p>
-        <p className="mt-1 text-xs text-white/60">Active agents: {multiAgentSessions[0]?.selectedAgents.length ?? 0}</p>
+        <p className="mt-1 text-xs text-white/60">Active agents: {multiAgentSessions[0]?.selectedAgents?.length ?? 0}</p>
         <p className="mt-1 text-xs text-white/60">Active alerts: {observabilitySnapshot?.activeAlerts ?? 0}</p>
         <p className="mt-1 text-xs text-white/60">Adaptive score: {learningSnapshot?.adaptationScore ?? 0}%</p>
         {state && (

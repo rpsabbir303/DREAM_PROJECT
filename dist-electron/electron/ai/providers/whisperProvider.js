@@ -1,12 +1,9 @@
-function readEnv(name) {
-    const value = process.env[name];
-    return value && value.trim().length > 0 ? value.trim() : null;
-}
+import { getEffectiveOpenAiApiKey, readProcessEnv } from '../openAiEnv.js';
 export async function transcribeAudioWithWhisper(input) {
-    const apiKey = readEnv('OPENAI_API_KEY');
-    const model = readEnv('OPENAI_WHISPER_MODEL') ?? 'whisper-1';
+    const apiKey = getEffectiveOpenAiApiKey();
+    const model = readProcessEnv('OPENAI_WHISPER_MODEL') ?? 'whisper-1';
     if (!apiKey) {
-        throw new Error('OPENAI_API_KEY is missing for Whisper transcription.');
+        throw new Error('OPENAI_API_KEY is missing or not a valid `sk-…` key in `.env` — Whisper transcription requires the same key as chat.');
     }
     const startedAt = Date.now();
     const binary = Buffer.from(input.audioBase64, 'base64');

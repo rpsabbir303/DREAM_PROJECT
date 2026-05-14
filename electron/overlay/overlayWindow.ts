@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { app, BrowserWindow, screen } from 'electron'
 import { createSecureWindowConfig } from '../security/browserWindowConfig.js'
-import { devServerUrl } from '../main/env.js'
+import { getDevServerUrl } from '../main/env.js'
 
 export function createOverlayWindow(): BrowserWindow {
   const display = screen.getPrimaryDisplay()
@@ -28,8 +28,9 @@ export function createOverlayWindow(): BrowserWindow {
     backgroundColor: '#00000000',
   })
   win.setAlwaysOnTop(true, 'screen-saver')
-  if (devServerUrl) {
-    void win.loadURL(`${devServerUrl}?overlay=1`)
+  const devUrl = getDevServerUrl()
+  if (devUrl) {
+    void win.loadURL(`${devUrl}?overlay=1`)
   } else {
     void win.loadFile(path.join(app.getAppPath(), 'dist/index.html'), { query: { overlay: '1' } })
   }

@@ -1,24 +1,34 @@
+import { getDevServerUrl, isDesktopViteDev } from './env.js';
 import path from 'node:path';
 import { app, BrowserWindow } from 'electron';
 import { SchedulerService } from '../automation/schedulerService.js';
 import { createMemoryRepository } from '../database/memoryRepository.js';
 import { registerIpcHandlers } from '../ipc/registerHandlers.js';
-import { MultiAgentCoordinator } from '../agents/multiAgentCoordinator.js';
-import { KnowledgeIndexingScheduler } from '../knowledge/indexingScheduler.js';
-import { ObservabilityOrchestrator } from '../observability/observabilityOrchestrator.js';
-import { AdaptiveLearningOrchestrator } from '../learning/adaptiveLearningOrchestrator.js';
 import { AssistantEnvironment } from '../overlay/assistantEnvironment.js';
-import { PluginManager } from '../skills/pluginManager.js';
-import { createSecureWindowConfig } from '../security/browserWindowConfig.js';
-import { devServerUrl } from './env.js';
+import { createSecureWindowConfig, logPreloadDiagnostics } from '../security/browserWindowConfig.js';
+import { probeOpenAiConnectivity } from '../ai/providers/openAiProvider.js';
 let mainWindow = null;
 let assistantEnvironment = null;
-let knowledgeScheduler = null;
-let observabilityOrchestrator = null;
-let learningOrchestrator = null;
 let isQuitting = false;
+function attachRendererLoadDiagnostics(webContents) {
+    webContents.on('dom-ready', () => {
+        console.info('[JARVIS_ELECTRON] renderer dom-ready URL=', webContents.getURL());
+    });
+    webContents.on('did-finish-load', () => {
+        console.info('[JARVIS_ELECTRON] renderer did-finish-load URL=', webContents.getURL());
+    });
+    webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+        console.error('[JARVIS_ELECTRON] renderer did-fail-load', {
+            errorCode,
+            errorDescription,
+            validatedURL,
+            hint: 'If dev: ensure Vite is on port 5173 (strictPort) and VITE_DEV_SERVER_URL matches.',
+        });
+    });
+}
 function createWindow() {
     const win = new BrowserWindow(createSecureWindowConfig());
+    attachRendererLoadDiagnostics(win.webContents);
     win.once('ready-to-show', () => win.show());
     win.on('close', (event) => {
         if (isQuitting)
@@ -27,41 +37,43 @@ function createWindow() {
         win.hide();
     });
     mainWindow = win;
-    if (devServerUrl) {
-        void win.loadURL(devServerUrl);
+    const devUrl = getDevServerUrl();
+    if (devUrl) {
+        console.info('[JARVIS_ELECTRON] loadURL (dev)=', devUrl);
+        void win.loadURL(devUrl);
     }
     else {
-        void win.loadFile(path.join(app.getAppPath(), 'dist/index.html'));
+        const filePath = path.join(app.getAppPath(), 'dist/index.html');
+        console.info('[JARVIS_ELECTRON] loadFile (prod)=', filePath);
+        void win.loadFile(filePath);
     }
 }
+/** MVP bootstrap: memory, scheduled workflows, overlay, and core IPC only. */
 app.whenReady().then(() => {
+    logPreloadDiagnostics();
+    const devUrl = getDevServerUrl();
+    console.info('[JARVIS_ELECTRON] NODE_ENV=', process.env.NODE_ENV ?? '(unset)');
+    console.info('[JARVIS_ELECTRON] app.isPackaged=', app.isPackaged);
+    console.info('[JARVIS_ELECTRON] process.env.VITE_DEV_SERVER_URL=', process.env.VITE_DEV_SERVER_URL ?? '(unset)');
+    console.info('[JARVIS_ELECTRON] desktop Vite dev mode=', isDesktopViteDev());
+    console.info('[JARVIS_ELECTRON] resolved dev server URL=', devUrl ?? '(none — will load dist/index.html)');
+    console.info('[JARVIS_ELECTRON] userData=', app.getPath('userData'));
     const memoryRepository = createMemoryRepository();
     memoryRepository.createDefaultMemoriesIfNeeded();
     const scheduler = new SchedulerService(memoryRepository);
-    const pluginManager = new PluginManager(memoryRepository);
-    knowledgeScheduler = new KnowledgeIndexingScheduler(memoryRepository, process.cwd());
-    observabilityOrchestrator = new ObservabilityOrchestrator(memoryRepository);
-    learningOrchestrator = new AdaptiveLearningOrchestrator(memoryRepository);
-    const multiAgentCoordinator = new MultiAgentCoordinator(memoryRepository, process.cwd());
     assistantEnvironment = new AssistantEnvironment(memoryRepository, () => mainWindow);
     registerIpcHandlers({
         memoryRepository,
         assistantEnvironment,
-        pluginManager,
-        knowledgeScheduler,
-        multiAgentCoordinator,
-        learningOrchestrator,
     });
+    void probeOpenAiConnectivity();
     scheduler.start();
-    knowledgeScheduler.start();
-    observabilityOrchestrator.start();
-    learningOrchestrator.start();
     createWindow();
     assistantEnvironment.start();
 });
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
-        // Keep app alive for tray/global assistant behavior.
+        // Tray / overlay can keep process alive.
     }
 });
 app.on('activate', () => {
@@ -72,7 +84,4 @@ app.on('activate', () => {
 app.on('before-quit', () => {
     isQuitting = true;
     assistantEnvironment?.stop();
-    knowledgeScheduler?.stop();
-    observabilityOrchestrator?.stop();
-    learningOrchestrator?.stop();
 });

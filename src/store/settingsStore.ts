@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AiModelInfo, AiProviderMetrics, AiProviderSettings, SemanticMemoryHit } from '@shared/interfaces/ipc'
+import type { AiModelInfo, AiProviderMetrics, AiProviderRuntimeStatus, AiProviderSettings, SemanticMemoryHit } from '@shared/interfaces/ipc'
 import { desktopClient } from '@/services/desktop/desktopClient'
 
 type ThemeMode = 'midnight' | 'obsidian'
@@ -10,7 +10,7 @@ interface SettingsStore {
   aiSettings: AiProviderSettings | null
   aiModels: AiModelInfo[]
   aiMetrics: AiProviderMetrics[]
-  offlineStatus: { online: boolean; ollamaReachable: boolean } | null
+  offlineStatus: AiProviderRuntimeStatus | null
   semanticHits: SemanticMemoryHit[]
   isLoadingAi: boolean
   error: string | null

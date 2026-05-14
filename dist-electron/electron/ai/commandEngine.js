@@ -1,5 +1,8 @@
 import { ExecutionManager } from '../system/executionManager.js';
 import { parseIntent } from './intentParser.js';
+/**
+ * IPC-facing command engine: parse → validate inside ExecutionManager → act → typed result.
+ */
 export class CommandEngine {
     memoryRepository;
     executionManager;
@@ -14,7 +17,12 @@ export class CommandEngine {
         const parsed = parseIntent(userInput);
         try {
             const result = await this.executionManager.runIntent(parsed);
-            const logId = this.memoryRepository.addCommandLog(userInput, 'success');
+            const logStatus = result.ok
+                ? 'success'
+                : result.error === 'validation_failed'
+                    ? 'warning'
+                    : 'error';
+            const logId = this.memoryRepository.addCommandLog(userInput, logStatus);
             return { ok: result.ok, message: result.message, logId };
         }
         catch (error) {

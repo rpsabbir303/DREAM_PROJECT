@@ -1,21 +1,18 @@
 import type { AiProviderSettings, AiRoutingDecision, ChatMessage } from '../../shared/interfaces/ipc.js'
-import { listOllamaModels, streamOllamaResponse } from './providers/ollamaProvider.js'
-import { streamOpenAiResponse } from './providers/openAiProvider.js'
-
-function readEnv(name: string) {
-  const value = process.env[name]
-  return value && value.trim().length > 0 ? value.trim() : null
-}
+import { completeOllamaChat, listOllamaModels } from './providers/ollamaProvider.js'
+import { canUseConfiguredGemini, resolveGeminiModel } from './geminiEnv.js'
+import { canUseConfiguredOpenAi } from './openAiEnv.js'
 
 function canUseOpenAi() {
-  return Boolean(readEnv('OPENAI_API_KEY'))
+  return canUseConfiguredOpenAi()
 }
 
 export async function getProviderStatus() {
   const models = await listOllamaModels()
   return {
-    online: canUseOpenAi(),
+    online: canUseConfiguredOpenAi() || canUseConfiguredGemini(),
     ollamaReachable: models.length > 0,
+    geminiConfigured: canUseConfiguredGemini(),
   }
 }
 
@@ -27,7 +24,10 @@ export async function getProviderModels(settings: AiProviderSettings) {
     provider: 'ollama' as const,
     available: localModels.includes(name) || builtIns.includes(name),
   }))
-  const cloud = [{ name: settings.cloudModel, provider: 'openai' as const, available: canUseOpenAi() }]
+  const cloud = [
+    { name: settings.cloudModel, provider: 'openai' as const, available: canUseOpenAi() },
+    { name: resolveGeminiModel(), provider: 'gemini' as const, available: canUseConfiguredGemini() },
+  ]
   return [...local, ...cloud]
 }
 
@@ -38,6 +38,33 @@ export function routeProvider(input: string, settings: AiProviderSettings, hasOl
       model: settings.localModel,
       reason: 'Offline mode is enabled.',
       isOffline: true,
+    }
+  }
+  /** When GEMINI_API_KEY is set, prefer Gemini for chat (avoids OpenAI quota during dev). */
+  if (canUseConfiguredGemini()) {
+    return {
+      provider: 'gemini',
+      model: resolveGeminiModel(),
+      reason: 'GEMINI_API_KEY is configured — using Google Gemini.',
+      isOffline: false,
+    }
+  }
+  /** Cloud path enables OpenAI tool calling (desktop actions decided by the model). */
+  if (settings.preferredProvider === 'openai' && canUseOpenAi()) {
+    return {
+      provider: 'openai',
+      model: settings.cloudModel,
+      reason: 'User prefers the cloud model (tool-capable path).',
+      isOffline: false,
+    }
+  }
+  /** If the API key is configured but Ollama is not running, use cloud instead of a dead local backend. */
+  if (canUseOpenAi() && !hasOllama) {
+    return {
+      provider: 'openai',
+      model: settings.cloudModel,
+      reason: 'OpenAI configured; local Ollama not reachable.',
+      isOffline: false,
     }
   }
   const prefersLocal = settings.preferredProvider === 'ollama'
@@ -66,6 +93,7 @@ export function routeProvider(input: string, settings: AiProviderSettings, hasOl
   }
 }
 
+/** Basic MVP: one non-streaming completion; emits a single `onDelta` with full text. */
 export async function streamWithProvider(params: {
   decision: AiRoutingDecision
   messages: ChatMessage[]
@@ -73,17 +101,13 @@ export async function streamWithProvider(params: {
   onDelta: (chunk: string) => void
 }) {
   if (params.decision.provider === 'ollama') {
-    return streamOllamaResponse({
+    const text = await completeOllamaChat({
       messages: params.messages,
       model: params.decision.model,
       signal: params.signal,
-      onDelta: params.onDelta,
     })
+    params.onDelta(text)
+    return text
   }
-  return streamOpenAiResponse({
-    messages: params.messages,
-    model: params.decision.model,
-    signal: params.signal,
-    onDelta: params.onDelta,
-  })
+  throw new Error('streamWithProvider: OpenAI and Gemini use dedicated chat paths in ChatEngine.')
 }

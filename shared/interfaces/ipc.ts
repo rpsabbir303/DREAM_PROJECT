@@ -26,11 +26,23 @@ export type AssistantIntentType =
   | 'chat_general'
   | 'unknown'
 
+/** Simplified classifier label for MVP tooling / UI (maps from AssistantIntentType). */
+export type MvpCommandKind =
+  | 'open_app'
+  | 'open_url'
+  | 'open_folder'
+  | 'run_command'
+  | 'system_status'
+  | 'chat'
+  | 'unknown'
+
 export interface ParsedIntent {
   intent: AssistantIntentType
   target: string
   confidence: number
   rawInput: string
+  /** MVP-friendly intent name (e.g. open_application → open_app). */
+  mvpKind: MvpCommandKind
 }
 
 export interface CommandUnderstanding {
@@ -39,6 +51,18 @@ export interface CommandUnderstanding {
   actionRequired: boolean
   confidence: number
   reasoning: string
+  /** One-line inferred goal for prompts and UI (optional). */
+  goalSummary?: string
+  /** Target clarity for desktop actions; high → clarify before tools. */
+  ambiguity?: 'low' | 'medium' | 'high'
+  /** Raw-input safety triage; `blocked` forbids tools for this turn. */
+  riskLevel?: 'none' | 'low' | 'blocked'
+  /** Path or workspace inferred from recent chat for follow-up commands. */
+  continuityHint?: string | null
+  /** Combined 0–1 score: classifier confidence × ambiguity × safety (for gating / UI). */
+  executionConfidence?: number
+  /** One-line outcome of the deterministic decision pass (for UI). */
+  decisionSummary?: string
 }
 
 export type TaskStatus = 'pending' | 'validating' | 'running' | 'completed' | 'failed'
@@ -70,6 +94,8 @@ export interface ExecutionResult {
   message: string
   output?: string
   error?: string
+  /** Short suggestion shown in UI / fed back to the model after failure. */
+  recoveryHint?: string | null
 }
 
 export type ChatRole = 'system' | 'user' | 'assistant'
@@ -94,6 +120,8 @@ export type ChatStreamEvent =
   | { streamId: string; type: 'task'; data: AssistantTask }
   | { streamId: string; type: 'task-status'; data: { taskId: string; status: TaskStatus } }
   | { streamId: string; type: 'execution'; data: ExecutionResult }
+  /** Emitted after a model-invoked tool finishes (OpenAI tool-calling path). */
+  | { streamId: string; type: 'tool-use'; data: { name: string; ok: boolean; summary: string } }
   | { streamId: string; type: 'delta'; data: { chunk: string } }
   | { streamId: string; type: 'complete'; data: { finalText: string } }
   | { streamId: string; type: 'error'; data: { message: string } }
@@ -264,7 +292,7 @@ export interface AgentRunSummary {
   message: string
 }
 
-export type AiProvider = 'openai' | 'ollama'
+export type AiProvider = 'openai' | 'ollama' | 'gemini'
 
 export interface AiProviderSettings {
   preferredProvider: AiProvider
@@ -295,6 +323,13 @@ export interface AiProviderMetrics {
   inputChars: number
   outputChars: number
   createdAt: string
+}
+
+/** Main-process snapshot for Settings / diagnostics (IPC). */
+export interface AiProviderRuntimeStatus {
+  online: boolean
+  ollamaReachable: boolean
+  geminiConfigured?: boolean
 }
 
 export interface SemanticMemoryHit {

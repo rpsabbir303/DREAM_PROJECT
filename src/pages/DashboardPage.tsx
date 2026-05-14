@@ -4,15 +4,9 @@ import { Activity, Bot, Mic, PlayCircle, TerminalSquare } from 'lucide-react'
 import { AIOrb } from '@/components/assistant/AIOrb'
 import { GlassPanel } from '@/components/ui/GlassPanel'
 import { useSystemPolling } from '@/hooks/useSystemPolling'
-import { useAgentStore } from '@/store/agentStore'
 import { useAppStore } from '@/store/appStore'
 import { useExecutionStore } from '@/store/executionStore'
 import { useMemoryStore } from '@/store/memoryStore'
-import { useKnowledgeStore } from '@/store/knowledgeStore'
-import { useLearningStore } from '@/store/learningStore'
-import { useMultiAgentStore } from '@/store/multiAgentStore'
-import { useObservabilityStore } from '@/store/observabilityStore'
-import { useProductivityStore } from '@/store/productivityStore'
 import { useScreenStore } from '@/store/screenStore'
 import { useSettingsStore } from '@/store/settingsStore'
 import { useSystemStore } from '@/store/systemStore'
@@ -24,6 +18,7 @@ function statusTone(state: string) {
   return 'text-amber-300'
 }
 
+/** MVP dashboard: system health, tasks, command history, and AI provider status (same layout shell). */
 export function DashboardPage() {
   const dashboard = useAppStore((state) => state.dashboard)
   const snapshot = useSystemStore((state) => state.snapshot)
@@ -38,21 +33,8 @@ export function DashboardPage() {
   const latestAnalysis = useScreenStore((state) => state.latestAnalysis)
   const refreshActiveWindow = useScreenStore((state) => state.refreshActiveWindow)
   const loadScreenHistory = useScreenStore((state) => state.loadHistory)
-  const plans = useAgentStore((state) => state.plans)
-  const loadAgentData = useAgentStore((state) => state.loadAgentData)
   const aiMetrics = useSettingsStore((state) => state.aiMetrics)
   const loadAiSettings = useSettingsStore((state) => state.loadAiSettings)
-  const insights = useProductivityStore((state) => state.insights)
-  const loadProductivityContext = useProductivityStore((state) => state.loadProductivityContext)
-  const indexingStatus = useKnowledgeStore((state) => state.indexingStatus)
-  const refreshKnowledgeStatus = useKnowledgeStore((state) => state.refreshStatus)
-  const multiAgentSessions = useMultiAgentStore((state) => state.sessions)
-  const multiAgentPerformance = useMultiAgentStore((state) => state.performance)
-  const loadMultiAgentState = useMultiAgentStore((state) => state.loadMultiAgentState)
-  const observabilitySnapshot = useObservabilityStore((state) => state.snapshot)
-  const loadObservability = useObservabilityStore((state) => state.loadObservability)
-  const learningSnapshot = useLearningStore((state) => state.snapshot)
-  const loadLearning = useLearningStore((state) => state.loadLearning)
   useSystemPolling(5000)
 
   useEffect(() => {
@@ -61,26 +43,14 @@ export function DashboardPage() {
     void loadRecentCommands()
     void refreshActiveWindow()
     void loadScreenHistory()
-    void loadAgentData()
     void loadAiSettings()
-    void loadProductivityContext()
-    void refreshKnowledgeStatus()
-    void loadMultiAgentState()
-    void loadObservability()
-    void loadLearning()
   }, [
     initializeExecutionListener,
     loadExecutionData,
     loadRecentCommands,
     refreshActiveWindow,
     loadScreenHistory,
-    loadAgentData,
     loadAiSettings,
-    loadProductivityContext,
-    refreshKnowledgeStatus,
-    loadMultiAgentState,
-    loadObservability,
-    loadLearning,
   ])
 
   const liveMetrics = snapshot
@@ -119,7 +89,7 @@ export function DashboardPage() {
           <div className="mb-4 flex items-center justify-between">
             <div>
               <p className="text-xs uppercase tracking-[0.18em] text-white/45">AI Status</p>
-              <h3 className="text-lg font-semibold text-white">System Intelligence Core</h3>
+              <h3 className="text-lg font-semibold text-white">JARVIS MVP</h3>
             </div>
             <AIOrb size="md" />
           </div>
@@ -157,7 +127,7 @@ export function DashboardPage() {
           <p className="mt-1 text-sm text-white/60">
             {snapshot
               ? `${snapshot.osPlatform} ${snapshot.osRelease} · ${snapshot.activeProcesses} processes`
-              : 'Zero critical incidents in current session.'}
+              : 'MVP build — chat, voice, commands, and workflows.'}
           </p>
         </GlassPanel>
       </section>
@@ -242,47 +212,22 @@ export function DashboardPage() {
         {[
           { label: 'AI Status', value: lastError ? 'Degraded' : 'Ready', icon: Bot },
           { label: 'Voice', value: snapshot ? snapshot.hostname : 'Standby', icon: Mic },
-          { label: 'Automation', value: snapshot ? `${snapshot.activeProcesses} Active` : '6 Active', icon: PlayCircle },
+          { label: 'Automation', value: snapshot ? `${snapshot.activeProcesses} procs` : '—', icon: PlayCircle },
           {
-            label: 'Diagnostics',
-            value: latestAnalysis ? latestAnalysis.summary.slice(0, 22) : isLoading ? 'Refreshing' : 'Nominal',
+            label: 'Screen',
+            value: latestAnalysis ? latestAnalysis.summary.slice(0, 22) : isLoading ? 'Refreshing' : 'Idle',
             icon: Activity,
-          },
-          {
-            label: 'Planner',
-            value: plans[0]?.state ?? 'idle',
-            icon: Bot,
           },
           {
             label: 'AI Provider',
             value: aiMetrics[0] ? `${aiMetrics[0].provider}:${aiMetrics[0].latencyMs}ms` : 'No data',
             icon: Activity,
           },
-          {
-            label: 'Dev Copilot',
-            value: insights?.projectContext?.projectType ?? 'unknown',
-            icon: Bot,
-          },
-          {
-            label: 'Knowledge',
-            value: `${indexingStatus?.indexedChunkCount ?? 0} chunks`,
-            icon: Activity,
-          },
-          {
-            label: 'Multi-Agent',
-            value: multiAgentSessions[0]?.status ?? 'idle',
-            icon: Bot,
-          },
-          {
-            label: 'Live Alerts',
-            value: `${observabilitySnapshot?.activeAlerts ?? 0} active`,
-            icon: Activity,
-          },
-          {
-            label: 'Adaptive Score',
-            value: `${learningSnapshot?.adaptationScore ?? 0}%`,
-            icon: Activity,
-          },
+          { label: 'MVP scope', value: 'Chat · Exec · Voice', icon: Bot },
+          { label: 'Workflows', value: 'Scheduler on', icon: PlayCircle },
+          { label: 'Memory', value: 'SQLite logs', icon: Activity },
+          { label: 'Advanced AI', value: 'Disabled', icon: Bot },
+          { label: 'Observability', value: 'N/A', icon: Activity },
         ].map((card) => (
           <GlassPanel key={card.label} className="flex items-center justify-between">
             <div>
@@ -298,31 +243,6 @@ export function DashboardPage() {
           <p className="text-xs text-white/50">Active Window Context</p>
           <p className="mt-1 text-sm text-white/85">
             {activeWindow.app} — {activeWindow.title}
-          </p>
-        </GlassPanel>
-      )}
-      {insights && (
-        <GlassPanel>
-          <p className="text-xs text-white/50">Productivity Next Step</p>
-          <p className="mt-1 text-sm text-white/85">{insights.suggestedNextStep}</p>
-        </GlassPanel>
-      )}
-      {multiAgentPerformance.length > 0 && (
-        <GlassPanel>
-          <p className="text-xs text-white/50">Agent Performance</p>
-          <p className="mt-1 text-sm text-white/85">
-            {multiAgentPerformance
-              .slice(0, 3)
-              .map((item) => `${item.agentId}:${item.avgLatencyMs}ms`)
-              .join(' | ')}
-          </p>
-        </GlassPanel>
-      )}
-      {learningSnapshot && (
-        <GlassPanel>
-          <p className="text-xs text-white/50">Adaptive Recommendation</p>
-          <p className="mt-1 text-sm text-white/85">
-            {learningSnapshot.recommendations[0]?.title ?? 'No recommendation yet.'}
           </p>
         </GlassPanel>
       )}

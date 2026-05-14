@@ -29,7 +29,7 @@ export const usePluginStore = create<PluginStore>((set) => ({
     }
   },
   setSkillEnabled: async (skillId, enabled) => {
-    const skills = await desktopClient.setSkillEnabled(skillId, enabled)
+    const skills = await desktopClient.setSkillEnabled({ skillId, enabled })
     const overview = await desktopClient.getSkillCapabilityOverview()
     set({ skills, overview })
   },

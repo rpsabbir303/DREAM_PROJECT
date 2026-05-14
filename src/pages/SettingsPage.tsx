@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { GlassPanel } from '@/components/ui/GlassPanel'
 import { useOverlayStore } from '@/store/overlayStore'
-import { usePluginStore } from '@/store/pluginStore'
 import { useSettingsStore } from '@/store/settingsStore'
 
 export function SettingsPage() {
@@ -24,18 +23,12 @@ export function SettingsPage() {
   const setVoiceMode = useOverlayStore((state) => state.setVoiceMode)
   const setQuickAutomation = useOverlayStore((state) => state.setQuickAutomation)
   const updateShortcuts = useOverlayStore((state) => state.updateShortcuts)
-  const skills = usePluginStore((state) => state.skills)
-  const pluginOverview = usePluginStore((state) => state.overview)
-  const pluginError = usePluginStore((state) => state.error)
-  const loadSkills = usePluginStore((state) => state.loadSkills)
-  const setSkillEnabled = usePluginStore((state) => state.setSkillEnabled)
   const [semanticQuery, setSemanticQuery] = useState('')
 
   useEffect(() => {
     void loadAiSettings()
     void loadOverlayEnvironment()
-    void loadSkills()
-  }, [loadAiSettings, loadOverlayEnvironment, loadSkills])
+  }, [loadAiSettings, loadOverlayEnvironment])
 
   const avgLatency = useMemo(() => {
     if (aiMetrics.length === 0) return null
@@ -46,11 +39,11 @@ export function SettingsPage() {
     <GlassPanel className="min-h-[70vh]">
       <h3 className="text-lg font-semibold text-white">Settings</h3>
       <p className="mt-2 text-sm text-white/60">
-        AI model, voice, theme, permissions, automation, and API key configuration lives here.
+        MVP: AI provider, overlay shortcuts, and command-history search. Set API keys in the project root `.env`
+        (OpenAI and/or Gemini).
       </p>
       {isLoadingAi && <p className="mt-2 text-xs text-cyan-300">Loading AI provider settings...</p>}
       {error && <p className="mt-2 text-xs text-red-300">{error}</p>}
-      {pluginError && <p className="mt-2 text-xs text-red-300">{pluginError}</p>}
       {aiSettings && (
         <div className="mt-4 space-y-4">
           <div className="rounded-xl border border-white/10 bg-black/20 p-3">
@@ -88,7 +81,8 @@ export function SettingsPage() {
               />
             </div>
             <p className="mt-2 text-xs text-white/60">
-              Network: {offlineStatus?.online ? 'OpenAI configured' : 'OpenAI unavailable'} | Ollama:{' '}
+              Cloud: {offlineStatus?.online ? 'OpenAI or Gemini key OK' : 'no cloud key'} | Gemini:{' '}
+              {offlineStatus?.geminiConfigured ? 'configured' : 'not configured'} | Ollama:{' '}
               {offlineStatus?.ollamaReachable ? 'reachable' : 'not reachable'}
             </p>
           </div>
@@ -105,12 +99,13 @@ export function SettingsPage() {
           </div>
 
           <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-            <p className="text-xs uppercase tracking-[0.14em] text-white/45">Semantic Memory Search</p>
+            <p className="text-xs uppercase tracking-[0.14em] text-white/45">Command history search</p>
+            <p className="mt-1 text-xs text-white/50">MVP: substring match on recent shell commands (no vector DB).</p>
             <div className="mt-2 flex gap-2">
               <input
                 value={semanticQuery}
                 onChange={(event) => setSemanticQuery(event.target.value)}
-                placeholder="Find memory by meaning..."
+                placeholder="Filter commands…"
                 className="h-10 flex-1 rounded-lg border border-white/10 bg-black/20 px-3 text-sm text-white"
               />
               <button
@@ -196,33 +191,6 @@ export function SettingsPage() {
               </p>
             </div>
           )}
-          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-            <p className="text-xs uppercase tracking-[0.14em] text-white/45">Skill & Plugin Management</p>
-            {pluginOverview && (
-              <p className="mt-2 text-xs text-white/60">
-                Enabled skills: {pluginOverview.enabledSkills}/{pluginOverview.totalSkills} | Tools:{' '}
-                {pluginOverview.toolCount} | Commands: {pluginOverview.commandCount}
-              </p>
-            )}
-            <div className="mt-2 space-y-2">
-              {skills.map((skill) => (
-                <label
-                  key={skill.id}
-                  className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white"
-                >
-                  <span>
-                    {skill.name}
-                    <span className="ml-2 text-xs text-white/45">({skill.category})</span>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={skill.enabled}
-                    onChange={(event) => void setSkillEnabled(skill.id, event.target.checked)}
-                  />
-                </label>
-              ))}
-            </div>
-          </div>
         </div>
       )}
     </GlassPanel>
