@@ -51,7 +51,7 @@ export function OverlayShell() {
 
   return (
     <div className="min-h-screen bg-transparent p-3 text-white">
-      <GlassPanel className="h-[calc(100vh-24px)] border-cyan-300/20 bg-[#070b14]/85 backdrop-blur-xl">
+      <GlassPanel className="h-[calc(100vh-24px)] border-amber-300/20 bg-[#0b0b0d]/85 backdrop-blur-xl">
         <p className="text-xs uppercase tracking-[0.14em] text-white/45">JARVIS Overlay</p>
         <p className="mt-1 text-xs text-white/60">
           {workspaceContext ? `${workspaceContext.app} - ${workspaceContext.title}` : 'Workspace context unavailable'}
@@ -66,7 +66,7 @@ export function OverlayShell() {
         <p className="mt-1 text-xs text-white/60">Active alerts: {observabilitySnapshot?.activeAlerts ?? 0}</p>
         <p className="mt-1 text-xs text-white/60">Adaptive score: {learningSnapshot?.adaptationScore ?? 0}%</p>
         {state && (
-          <p className="mt-1 text-xs text-cyan-300">
+          <p className="mt-1 text-xs text-amber-300">
             Voice: {state.voiceMode ? 'on' : 'off'} | Automation: {state.quickAutomation ? 'on' : 'off'}
           </p>
         )}
@@ -79,7 +79,7 @@ export function OverlayShell() {
           />
           <button
             onClick={() => void sendMessage(inputValue)}
-            className="mt-2 w-full rounded-lg border border-cyan-300/30 bg-cyan-500/20 px-3 py-2 text-xs text-cyan-100"
+            className="mt-2 w-full rounded-lg border border-amber-300/30 bg-amber-500/20 px-3 py-2 text-xs text-amber-100"
           >
             Send
           </button>

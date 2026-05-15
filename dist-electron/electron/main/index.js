@@ -7,6 +7,10 @@ import { registerIpcHandlers } from '../ipc/registerHandlers.js';
 import { AssistantEnvironment } from '../overlay/assistantEnvironment.js';
 import { createSecureWindowConfig, logPreloadDiagnostics } from '../security/browserWindowConfig.js';
 import { initializeJarvisGeminiOnStartup } from '../ai/providers/geminiProvider.js';
+import { startWindowTracking, stopWindowTracking } from '../system/windowState.js';
+import { initDiscovery, stopDiscovery } from '../system/appDiscovery.js';
+import { startDesktopStateEngine, stopDesktopStateEngine } from '../system/desktopStateEngine.js';
+import { startProcessGraph, stopProcessGraph } from '../system/runtimeProcessGraph.js';
 let mainWindow = null;
 let assistantEnvironment = null;
 let isQuitting = false;
@@ -70,6 +74,14 @@ app.whenReady().then(() => {
     scheduler.start();
     createWindow();
     assistantEnvironment.start();
+    // Legacy active-window + running-app poller (kept for runtimeState compat)
+    startWindowTracking();
+    // Universal app discovery: scan all installed apps in background
+    initDiscovery();
+    // Desktop State Engine: HWND-based live window tracking (window-first arch)
+    startDesktopStateEngine();
+    // Process Graph: parent/child relationship tracker (fixes Electron/Steam launchers)
+    startProcessGraph();
 });
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
@@ -84,4 +96,8 @@ app.on('activate', () => {
 app.on('before-quit', () => {
     isQuitting = true;
     assistantEnvironment?.stop();
+    stopWindowTracking();
+    stopDiscovery();
+    stopDesktopStateEngine();
+    stopProcessGraph();
 });

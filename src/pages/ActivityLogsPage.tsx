@@ -22,8 +22,7 @@ export function ActivityLogsPage() {
 
   return (
     <GlassPanel className="min-h-[70vh]">
-      <h3 className="text-lg font-semibold text-white">Activity Logs</h3>
-      <p className="mt-2 text-sm text-white/60">Execution logs, command traces, and screen analysis (MVP).</p>
+      <h3 className="text-lg font-medium tracking-tight text-white/95">Logs</h3>
       <div className="mt-4 space-y-2">
         {logs.length === 0 ? (
           <p className="text-sm text-white/40">No execution logs yet.</p>
@@ -31,10 +30,10 @@ export function ActivityLogsPage() {
           logs.slice(0, 24).map((log) => (
             <div
               key={log.id}
-              className="flex items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3 py-2"
+              className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 transition hover:bg-white/[0.04]"
             >
               <p className="text-sm text-white/80">{log.message}</p>
-              <span className="text-xs uppercase text-cyan-300">{log.level}</span>
+              <span className="text-xs uppercase text-amber-300">{log.level}</span>
             </div>
           ))
         )}

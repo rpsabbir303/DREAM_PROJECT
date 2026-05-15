@@ -1,27 +1,44 @@
 import { motion } from 'framer-motion'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import { FloatingAssistantButton } from '@/components/assistant/FloatingAssistantButton'
+import { AmbientBackground } from '@/components/ui/AmbientBackground'
 import { Sidebar } from '@/components/navigation/Sidebar'
 import { TopNavigation } from '@/components/navigation/TopNavigation'
 
 export function DesktopLayout() {
+  const location = useLocation()
+  const isChat = location.pathname === '/chat'
+
   return (
-    <div className="min-h-screen bg-[#070b14] text-white">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top,#1e3a8a40,transparent_35%),radial-gradient(circle_at_80%_20%,#06b6d420,transparent_25%)]" />
-      <div className="relative flex min-h-screen">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.5 }}
+      className="jarvis-bg relative min-h-screen text-white"
+    >
+      <AmbientBackground />
+
+      <motion.div
+        className="relative z-[1] flex min-h-screen"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.08, duration: 0.45 }}
+      >
         <Sidebar />
-        <main className="flex-1 p-6">
-          <TopNavigation />
+        <main className={isChat ? 'flex min-h-screen flex-1 flex-col' : 'flex-1 p-5 xl:p-6'}>
+          {!isChat && <TopNavigation />}
           <motion.div
+            key={location.pathname}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.25, ease: 'easeOut' }}
+            transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+            className={isChat ? 'flex min-h-0 flex-1 flex-col' : undefined}
           >
             <Outlet />
           </motion.div>
         </main>
-      </div>
+      </motion.div>
       <FloatingAssistantButton />
-    </div>
+    </motion.div>
   )
 }

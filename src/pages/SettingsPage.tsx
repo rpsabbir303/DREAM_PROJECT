@@ -36,19 +36,19 @@ export function SettingsPage() {
 
   return (
     <GlassPanel className="min-h-[70vh]">
-      <h3 className="text-lg font-semibold text-white">Settings</h3>
-      <p className="mt-2 text-sm text-white/60">
-        MVP: Gemini chat, overlay shortcuts, and command-history search. Set <code className="text-cyan-200/90">GEMINI_API_KEY</code> in the
-        project root `.env`.
+      <h3 className="text-lg font-medium tracking-tight text-white/95">Settings</h3>
+      <p className="mt-2 text-sm text-white/45">
+        Configure Gemini via <code className="rounded bg-white/[0.06] px-1 text-amber-200/80">GEMINI_API_KEY</code> in{' '}
+        <code className="rounded bg-white/[0.06] px-1 text-white/60">.env</code>
       </p>
-      {isLoadingAi && <p className="mt-2 text-xs text-cyan-300">Loading AI provider settings...</p>}
+      {isLoadingAi && <p className="mt-2 text-xs text-amber-300">Loading AI provider settings...</p>}
       {error && <p className="mt-2 text-xs text-red-300">{error}</p>}
       {aiSettings && (
         <div className="mt-4 space-y-4">
           <div className="rounded-xl border border-white/10 bg-black/20 p-3">
             <p className="text-xs uppercase tracking-[0.14em] text-white/45">AI (Google Gemini)</p>
             <p className="mt-2 text-sm text-white/80">
-              Provider: Gemini only — model <span className="text-cyan-200">{offlineStatus?.activeModel ?? '—'}</span>
+              Provider: Gemini only — model <span className="text-amber-200">{offlineStatus?.activeModel ?? '—'}</span>
             </p>
             <p className="mt-2 text-xs text-white/60">
               Key: {offlineStatus?.geminiConfigured ? 'GEMINI_API_KEY OK' : 'not configured or placeholder'} | Cloud ready:{' '}
@@ -56,7 +56,7 @@ export function SettingsPage() {
             </p>
             <p className="mt-2 text-xs text-white/50">
               Model id comes from <code className="text-white/70">GEMINI_MODEL</code> in the project root <code className="text-white/70">.env</code> (see Google AI Studio). Current:{' '}
-              <code className="text-cyan-200/90">{offlineStatus?.activeModel ?? '—'}</code>
+              <code className="text-amber-200/90">{offlineStatus?.activeModel ?? '—'}</code>
             </p>
           </div>
 
@@ -83,7 +83,7 @@ export function SettingsPage() {
               />
               <button
                 onClick={() => void searchSemanticMemory(semanticQuery)}
-                className="rounded-lg border border-cyan-300/30 bg-cyan-500/20 px-3 text-xs text-cyan-200 hover:bg-cyan-500/30"
+                className="rounded-lg border border-amber-300/30 bg-amber-500/20 px-3 text-xs text-amber-200 hover:bg-amber-500/30"
               >
                 Search
               </button>

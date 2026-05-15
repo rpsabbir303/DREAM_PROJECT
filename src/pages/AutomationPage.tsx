@@ -74,7 +74,7 @@ export function AutomationPage() {
     <GlassPanel className="min-h-[70vh]">
       <h3 className="text-lg font-semibold text-white">Automation Workflows</h3>
       <p className="mt-2 text-sm text-white/60">Live workflow tasks and execution pipeline statuses.</p>
-      {isLoading && <p className="mt-2 text-xs text-cyan-300">Refreshing automation state...</p>}
+      {isLoading && <p className="mt-2 text-xs text-amber-300">Refreshing automation state...</p>}
       {error && <p className="mt-2 text-xs text-red-300">{error}</p>}
 
       <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
@@ -88,7 +88,7 @@ export function AutomationPage() {
           />
           <button
             onClick={() => void planGoal()}
-            className="rounded-lg border border-cyan-300/30 bg-cyan-500/20 px-3 text-xs text-cyan-200 hover:bg-cyan-500/30"
+            className="rounded-lg border border-amber-300/30 bg-amber-500/20 px-3 text-xs text-amber-200 hover:bg-amber-500/30"
           >
             {isPlanning ? 'Planning...' : 'Plan Goal'}
           </button>
@@ -107,7 +107,7 @@ export function AutomationPage() {
           />
           <button
             onClick={() => void generateTasks()}
-            className="rounded-lg border border-cyan-300/30 bg-cyan-500/20 px-3 text-xs text-cyan-200 hover:bg-cyan-500/30"
+            className="rounded-lg border border-amber-300/30 bg-amber-500/20 px-3 text-xs text-amber-200 hover:bg-amber-500/30"
           >
             Generate Tasks
           </button>
@@ -134,7 +134,7 @@ export function AutomationPage() {
           />
           <button
             onClick={() => void runMultiAgentGoal()}
-            className="rounded-lg border border-cyan-300/30 bg-cyan-500/20 px-3 text-xs text-cyan-200 hover:bg-cyan-500/30"
+            className="rounded-lg border border-amber-300/30 bg-amber-500/20 px-3 text-xs text-amber-200 hover:bg-amber-500/30"
           >
             {isMultiAgentRunning ? 'Running...' : 'Run Agents'}
           </button>
@@ -161,7 +161,7 @@ export function AutomationPage() {
           />
           <button
             onClick={() => void generateWorkflow()}
-            className="rounded-lg border border-cyan-300/30 bg-cyan-500/20 px-3 text-xs text-cyan-200 hover:bg-cyan-500/30"
+            className="rounded-lg border border-amber-300/30 bg-amber-500/20 px-3 text-xs text-amber-200 hover:bg-amber-500/30"
           >
             Generate
           </button>
@@ -174,16 +174,16 @@ export function AutomationPage() {
           <button
             key={plan.id}
             onClick={() => void executePlan(plan.id)}
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-left hover:border-cyan-300/40"
+            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-left hover:border-amber-300/40"
           >
             <div className="flex items-center justify-between">
               <p className="text-sm text-white/85">{plan.goal}</p>
-              <span className="text-xs uppercase text-cyan-300">{plan.state}</span>
+              <span className="text-xs uppercase text-amber-300">{plan.state}</span>
             </div>
             <p className="mt-1 text-xs text-white/45">{plan.steps.length} planned steps</p>
           </button>
         ))}
-        {isExecuting && <p className="text-xs text-cyan-300">Executing plan...</p>}
+        {isExecuting && <p className="text-xs text-amber-300">Executing plan...</p>}
       </div>
 
       <div className="mt-4 space-y-2 rounded-xl border border-white/10 bg-black/20 p-3">
@@ -192,11 +192,11 @@ export function AutomationPage() {
           <button
             key={workflow.id}
             onClick={() => void executeWorkflow(workflow.id)}
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-left hover:border-cyan-300/40"
+            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-left hover:border-amber-300/40"
           >
             <div className="flex items-center justify-between">
               <p className="text-sm text-white/85">{workflow.name}</p>
-              <span className="text-xs text-cyan-300">{workflow.steps.length} steps</span>
+              <span className="text-xs text-amber-300">{workflow.steps.length} steps</span>
             </div>
             <p className="mt-1 text-xs text-white/45">{workflow.description}</p>
           </button>
@@ -209,7 +209,7 @@ export function AutomationPage() {
           {schedules.slice(0, 8).map((schedule) => (
             <div key={schedule.id} className="flex items-center justify-between text-xs text-white/75">
               <span>{schedule.scheduleType}</span>
-              <span className="text-cyan-300">{schedule.timeOfDay ?? schedule.runAt ?? 'manual'}</span>
+              <span className="text-amber-300">{schedule.timeOfDay ?? schedule.runAt ?? 'manual'}</span>
             </div>
           ))}
         </div>
@@ -218,7 +218,7 @@ export function AutomationPage() {
           {runs.slice(0, 8).map((run) => (
             <div key={run.id} className="flex items-center justify-between text-xs text-white/75">
               <span>{run.workflowName}</span>
-              <span className="uppercase text-cyan-300">{run.status}</span>
+              <span className="uppercase text-amber-300">{run.status}</span>
             </div>
           ))}
         </div>
@@ -228,7 +228,7 @@ export function AutomationPage() {
         {agentRuns.slice(0, 6).map((run) => (
           <div key={run.id} className="mt-2 flex items-center justify-between text-xs text-white/75">
             <span>{run.goal}</span>
-            <span className="uppercase text-cyan-300">{run.state}</span>
+            <span className="uppercase text-amber-300">{run.state}</span>
           </div>
         ))}
       </div>
@@ -238,7 +238,7 @@ export function AutomationPage() {
           {multiAgentSessions.slice(0, 4).map((session) => (
             <div key={session.id} className="mt-2 rounded-lg border border-white/10 bg-black/20 px-2 py-1">
               <p className="text-xs text-white/80">{session.goal}</p>
-              <p className="text-[11px] uppercase text-cyan-300">{session.status}</p>
+              <p className="text-[11px] uppercase text-amber-300">{session.status}</p>
             </div>
           ))}
         </div>
@@ -259,7 +259,7 @@ export function AutomationPage() {
             <p className="text-xs uppercase tracking-[0.14em] text-white/45">Adaptive Workflow Intelligence</p>
             <button
               onClick={() => void refreshLearning()}
-              className="rounded border border-cyan-300/30 bg-cyan-500/20 px-2 py-1 text-[10px] text-cyan-200"
+              className="rounded border border-amber-300/30 bg-amber-500/20 px-2 py-1 text-[10px] text-amber-200"
             >
               Refresh
             </button>
@@ -272,7 +272,7 @@ export function AutomationPage() {
                 <div className="mt-2 flex gap-2">
                   <button
                     onClick={() => void setRecommendationStatus(item.id, 'accepted')}
-                    className="rounded border border-cyan-300/30 px-2 py-1 text-[10px] text-cyan-200"
+                    className="rounded border border-amber-300/30 px-2 py-1 text-[10px] text-amber-200"
                   >
                     Accept
                   </button>
@@ -302,7 +302,7 @@ export function AutomationPage() {
             <div key={task.id} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
               <div className="flex items-center justify-between">
                 <p className="text-sm text-white/85">{task.title}</p>
-                <span className="text-xs uppercase text-cyan-300">{task.status}</span>
+                <span className="text-xs uppercase text-amber-300">{task.status}</span>
               </div>
               <p className="mt-1 text-xs text-white/45">{task.intent}</p>
             </div>

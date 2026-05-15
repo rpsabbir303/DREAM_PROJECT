@@ -69,6 +69,11 @@ export const IPC_CHANNELS = {
   learningSnapshot: 'learning:snapshot',
   learningRefresh: 'learning:refresh',
   learningSetRecommendationStatus: 'learning:set-recommendation-status',
+
+  // Desktop Agent (Phase 10)
+  desktopAgentWindows:     'desktop-agent:windows',
+  desktopAgentRunningApps: 'desktop-agent:running-apps',
+  desktopAgentActiveWindow:'desktop-agent:active-window',
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

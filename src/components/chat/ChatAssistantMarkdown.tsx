@@ -1,44 +1,45 @@
 import { memo } from 'react'
+import { motion } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
 
 interface ChatAssistantMarkdownProps {
   content: string
 }
 
-/**
- * Assistant-only markdown — tuned for a premium, readable “holographic console” feel.
- */
 function ChatAssistantMarkdownInner({ content }: ChatAssistantMarkdownProps) {
   if (!content.trim()) {
     return (
-      <span className="inline-block animate-pulse font-mono text-[13px] tracking-wide text-cyan-200/50">
-        Awaiting signal…
+      <span className="inline-flex items-center gap-1.5 text-[14px] text-amber-200/50">
+        <span className="jarvis-typing-dot inline-block h-1 w-1 rounded-full bg-amber-400/80" />
+        <span className="jarvis-typing-dot inline-block h-1 w-1 rounded-full bg-amber-300/80" />
+        <span className="jarvis-typing-dot inline-block h-1 w-1 rounded-full bg-amber-400/80" />
       </span>
     )
   }
 
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0.92 }}
+      animate={{ opacity: 1 }}
       className={[
-        'markdown-body text-[14px] leading-relaxed tracking-[0.01em]',
-        'text-white/[0.92]',
-        '[&_a]:text-cyan-300 [&_a]:underline-offset-2 [&_a]:transition-colors hover:[&_a]:text-cyan-200',
-        '[&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-cyan-400/45 [&_blockquote]:bg-cyan-500/[0.06] [&_blockquote]:py-1 [&_blockquote]:pl-3 [&_blockquote]:pr-2 [&_blockquote]:text-white/75',
-        '[&_h1]:mb-2 [&_h1]:text-[15px] [&_h1]:font-semibold [&_h1]:tracking-tight [&_h1]:text-cyan-50',
-        '[&_h2]:mb-1.5 [&_h2]:mt-3 [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:text-cyan-100/95',
-        '[&_h3]:mb-1 [&_h3]:mt-2 [&_h3]:text-[13px] [&_h3]:font-medium [&_h3]:text-white/90',
-        '[&_hr]:my-3 [&_hr]:border-white/10',
-        '[&_li]:my-0.5 [&_li]:marker:text-cyan-400/60',
+        'markdown-body text-[15px] leading-[1.65] tracking-[0.01em] text-white/[0.93]',
+        '[&_a]:text-amber-300/90 [&_a]:underline-offset-2 hover:[&_a]:text-amber-200',
+        '[&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-amber-400/35 [&_blockquote]:bg-amber-500/[0.04] [&_blockquote]:pl-3 [&_blockquote]:text-white/70',
+        '[&_h1]:mb-2 [&_h1]:text-base [&_h1]:font-medium [&_h1]:text-white/95',
+        '[&_h2]:mb-1.5 [&_h2]:mt-3 [&_h2]:text-[15px] [&_h2]:font-medium [&_h2]:text-white/90',
+        '[&_h3]:mb-1 [&_h3]:mt-2 [&_h3]:text-sm [&_h3]:font-medium [&_h3]:text-white/85',
+        '[&_hr]:my-3 [&_hr]:border-white/[0.06]',
+        '[&_li]:my-0.5 [&_li]:marker:text-amber-400/50',
         '[&_ol]:list-decimal [&_ol]:pl-5',
-        '[&_p]:mb-2 [&_p]:last:mb-0 [&_p]:text-white/[0.9]',
-        '[&_strong]:font-semibold [&_strong]:text-cyan-50/95',
+        '[&_p]:mb-2.5 [&_p]:last:mb-0',
+        '[&_strong]:font-medium [&_strong]:text-amber-100/90',
         '[&_ul]:list-disc [&_ul]:pl-5',
       ].join(' ')}
     >
       <ReactMarkdown
         components={{
           pre: ({ children }) => (
-            <pre className="my-2 overflow-x-auto rounded-lg border border-cyan-500/20 bg-black/55 p-3 text-[12px] leading-snug text-cyan-50/95 shadow-[inset_0_1px_0_0_rgba(34,211,238,0.06)]">
+            <pre className="my-2.5 overflow-x-auto rounded-xl border border-amber-400/15 bg-black/40 p-4 text-[13px] leading-snug text-amber-50/90 shadow-inner">
               {children}
             </pre>
           ),
@@ -48,7 +49,7 @@ function ChatAssistantMarkdownInner({ content }: ChatAssistantMarkdownProps) {
               return <code className={className}>{children}</code>
             }
             return (
-              <code className="rounded border border-white/10 bg-white/[0.08] px-1.5 py-0.5 font-mono text-[0.88em] text-cyan-100">
+              <code className="rounded-md border border-white/[0.08] bg-white/[0.06] px-1.5 py-0.5 font-mono text-[0.9em] text-amber-100/90">
                 {children}
               </code>
             )
@@ -57,7 +58,7 @@ function ChatAssistantMarkdownInner({ content }: ChatAssistantMarkdownProps) {
       >
         {content}
       </ReactMarkdown>
-    </div>
+    </motion.div>
   )
 }
 

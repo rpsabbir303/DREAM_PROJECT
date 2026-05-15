@@ -37,9 +37,9 @@ export function MemoryPage() {
 
   return (
     <GlassPanel className="min-h-[70vh]">
-      <h3 className="text-lg font-semibold text-white">Memory Archive</h3>
+      <h3 className="text-lg font-medium tracking-tight text-white/95">Memory</h3>
       <p className="mt-2 text-sm text-white/60">Saved memories, favorite commands, and learned behavior signals.</p>
-      {isLoading && <p className="mt-3 text-xs text-cyan-300">Loading memory graph...</p>}
+      {isLoading && <p className="mt-3 text-xs text-amber-300">Loading memory graph...</p>}
       {error && <p className="mt-3 text-xs text-red-300">{error}</p>}
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -48,7 +48,7 @@ export function MemoryPage() {
           {commandStats.slice(0, 6).map((item) => (
             <div key={item.command} className="flex items-center justify-between text-xs text-white/80">
               <span>{item.command}</span>
-              <span className="text-cyan-300">{item.usageCount}x</span>
+              <span className="text-amber-300">{item.usageCount}x</span>
             </div>
           ))}
         </div>
@@ -57,7 +57,7 @@ export function MemoryPage() {
           {recentCommands.slice(0, 6).map((item) => (
             <div key={item.id} className="flex items-center justify-between text-xs text-white/80">
               <span>{item.command}</span>
-              <span className="uppercase text-cyan-300">{item.result}</span>
+              <span className="uppercase text-amber-300">{item.result}</span>
             </div>
           ))}
         </div>
@@ -79,7 +79,7 @@ export function MemoryPage() {
             <button
               key={workflow.id}
               onClick={() => void runWorkflow(workflow.id)}
-              className="w-full rounded-lg border border-white/10 bg-black/20 p-2 text-left transition hover:border-cyan-300/40"
+              className="w-full rounded-lg border border-white/10 bg-black/20 p-2 text-left transition hover:border-amber-300/40"
             >
               <p className="text-sm text-white/85">{workflow.name}</p>
               <p className="mt-1 text-xs text-white/50">{workflow.description}</p>
@@ -135,7 +135,7 @@ export function MemoryPage() {
         </p>
         <button
           onClick={() => void reindex()}
-          className="mt-2 rounded-lg border border-cyan-300/30 bg-cyan-500/20 px-3 py-1 text-xs text-cyan-100"
+          className="mt-2 rounded-lg border border-amber-300/30 bg-amber-500/20 px-3 py-1 text-xs text-amber-100"
         >
           Reindex Knowledge
         </button>
@@ -151,7 +151,7 @@ export function MemoryPage() {
           />
           <button
             onClick={() => void search()}
-            className="rounded-lg border border-cyan-300/30 bg-cyan-500/20 px-3 text-xs text-cyan-200"
+            className="rounded-lg border border-amber-300/30 bg-amber-500/20 px-3 text-xs text-amber-200"
           >
             Search
           </button>

@@ -1,22 +1,41 @@
-import { Bell, Search } from 'lucide-react'
+import { motion } from 'framer-motion'
+import { useLocation } from 'react-router-dom'
 import { AIOrb } from '../assistant/AIOrb'
+import { ClockChip } from './ClockChip'
+
+const pageTitles: Record<string, string> = {
+  '/dashboard': 'Overview',
+  '/chat': 'Chat',
+  '/automation': 'Automation',
+  '/memory': 'Memory',
+  '/activity-logs': 'Logs',
+  '/settings': 'Settings',
+}
 
 export function TopNavigation() {
+  const { pathname } = useLocation()
+  const title = pageTitles[pathname] ?? 'JARVIS'
+
   return (
-    <header className="mb-6 flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-3 backdrop-blur-xl">
+    <header className="mb-5 flex items-center justify-between gap-4">
       <div>
-        <p className="text-xs uppercase tracking-[0.2em] text-cyan-300/75">Jarvis Protocol</p>
-        <h2 className="text-xl font-semibold text-white">Mission Control</h2>
+        <p className="jarvis-label mb-1">System</p>
+        <motion.h1
+          initial={{ opacity: 0, x: -8 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="jarvis-heading text-xl"
+        >
+          {title}
+        </motion.h1>
       </div>
-      <div className="flex items-center gap-3">
-        <button className="rounded-xl border border-white/10 bg-black/20 p-2 text-white/80 transition hover:text-white">
-          <Search className="h-4 w-4" />
-        </button>
-        <button className="rounded-xl border border-white/10 bg-black/20 p-2 text-white/80 transition hover:text-white">
-          <Bell className="h-4 w-4" />
-        </button>
-        <AIOrb size="sm" />
-      </div>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="flex items-center gap-3"
+      >
+        <ClockChip />
+        <AIOrb size="sm" active />
+      </motion.div>
     </header>
   )
 }

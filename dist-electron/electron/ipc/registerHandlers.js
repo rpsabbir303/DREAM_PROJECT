@@ -10,6 +10,8 @@ import { analyzeCapture } from '../vision/screenAnalysisService.js';
 import { captureScreen } from '../vision/screenCaptureService.js';
 import { getProviderModels, getProviderStatus } from '../ai/providerRouter.js';
 import { searchCommandPalette } from '../overlay/commandPaletteService.js';
+import { listWindows, getActiveWindow } from '../system/windowManager.js';
+import { listRunningApps } from '../system/processManager.js';
 const chatStartInputSchema = z.object({
     streamId: z.string().min(8).max(80),
     input: z.string().min(1).max(4000),
@@ -168,5 +170,15 @@ export function registerIpcHandlers({ memoryRepository, assistantEnvironment, })
     });
     ipcMain.handle(IPC_CHANNELS.screenHistory, async () => {
         return memoryRepository.getRecentScreenAnalyses(24);
+    });
+    // ── Phase 10: Desktop Agent Status ───────────────────────────────────────
+    ipcMain.handle(IPC_CHANNELS.desktopAgentWindows, async () => {
+        return listWindows();
+    });
+    ipcMain.handle(IPC_CHANNELS.desktopAgentRunningApps, async () => {
+        return listRunningApps();
+    });
+    ipcMain.handle(IPC_CHANNELS.desktopAgentActiveWindow, async () => {
+        return getActiveWindow();
     });
 }
