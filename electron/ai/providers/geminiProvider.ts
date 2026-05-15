@@ -1,95 +1,64 @@
-import type { Content } from '@google/generative-ai'
-import {
-  GoogleGenerativeAI,
-  GoogleGenerativeAIAbortError,
-  GoogleGenerativeAIError,
-  GoogleGenerativeAIFetchError,
-  GoogleGenerativeAIRequestInputError,
-  GoogleGenerativeAIResponseError,
-} from '@google/generative-ai'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 import type { ChatMessage } from '../../../shared/interfaces/ipc.js'
-import { getEffectiveGeminiApiKey, resolveGeminiModel } from '../geminiEnv.js'
-import { readProcessEnv } from '../openAiEnv.js'
+import { canUseConfiguredGemini, getEffectiveGeminiApiKey, resolveGeminiModel } from '../geminiEnv.js'
 
 const GEMINI_TIMEOUT_MS = Math.min(
-  Math.max(30_000, Number(process.env.GEMINI_FETCH_TIMEOUT_MS ?? process.env.OPENAI_FETCH_TIMEOUT_MS ?? 120_000)),
+  Math.max(30_000, Number(process.env.GEMINI_FETCH_TIMEOUT_MS ?? 120_000)),
   600_000,
 )
 
-function mapGeminiFailure(error: unknown): never {
-  if (error instanceof GoogleGenerativeAIAbortError) {
-    throw new Error('Gemini request was cancelled or timed out. Check GEMINI_FETCH_TIMEOUT_MS / network.')
-  }
-  if (error instanceof GoogleGenerativeAIFetchError) {
-    const s = error.status
-    if (s === 400) throw new Error(`Gemini bad request (HTTP 400): ${error.message}`)
-    if (s === 401 || s === 403) {
-      throw new Error(`Invalid or unauthorized Gemini API key (HTTP ${s}). Verify GEMINI_API_KEY in .env (Google AI Studio).`)
-    }
-    if (s === 429) {
-      throw new Error(`Gemini quota or rate limit exceeded (HTTP 429): ${error.message}`)
-    }
-    if (s != null && s >= 500) {
-      throw new Error(`Gemini server error (HTTP ${s}): ${error.message}`)
-    }
-    throw new Error(`Gemini HTTP error${s != null ? ` (${s})` : ''}: ${error.message}`)
-  }
-  if (error instanceof GoogleGenerativeAIRequestInputError) {
-    throw new Error(`Gemini request invalid: ${error.message}`)
-  }
-  if (error instanceof GoogleGenerativeAIResponseError) {
-    throw new Error(`Gemini response error: ${error.message}`)
-  }
-  if (error instanceof GoogleGenerativeAIError) {
-    throw new Error(`Gemini error: ${error.message}`)
-  }
-  if (error instanceof Error) {
-    throw error
-  }
-  throw new Error(String(error))
+/** Redact SDK error strings so logs do not echo full Google endpoint URLs. */
+function redactHttpUrls(message: string): string {
+  return message.replace(/\bhttps?:\/\/[^\s]+/gi, '[sdk-endpoint]')
 }
 
-function buildSystemInstruction(messages: ChatMessage[]): string {
-  return messages
-    .filter((m) => m.role === 'system')
-    .map((m) => m.content)
-    .join('\n\n')
-    .trim()
-}
-
-function buildGeminiContents(messages: ChatMessage[]): Content[] {
-  const contents: Content[] = []
-  for (const m of messages) {
-    if (m.role === 'system') continue
-    if (m.role === 'user') {
-      contents.push({ role: 'user', parts: [{ text: m.content }] })
-    } else if (m.role === 'assistant') {
-      contents.push({ role: 'model', parts: [{ text: m.content }] })
-    }
-  }
-  return contents
+function buildPrompt(messages: ChatMessage[]): string {
+  return messages.map((m) => `${m.role}: ${m.content}`).join('\n')
 }
 
 /**
- * Single non-streaming completion (MVP parity with OpenAI basic chat).
+ * Gemini via **only** `@google/generative-ai` — no `fetch`, no manual URLs, no `baseUrl` / `apiVersion` in app code.
+ * HTTP is performed inside the SDK.
+ */
+export async function initializeJarvisGeminiOnStartup(): Promise<void> {
+  const resolvedModel = resolveGeminiModel()
+  console.log('[JARVIS_GEMINI] SDK ONLY MODE')
+  console.log('[JARVIS_GEMINI] MODEL =', resolvedModel)
+
+  if (!canUseConfiguredGemini()) {
+    console.warn('[JARVIS_GEMINI] Startup skipped — GEMINI_API_KEY missing or placeholder in `.env`')
+    return
+  }
+
+  const apiKey = getEffectiveGeminiApiKey()
+  if (!apiKey) {
+    console.warn('[JARVIS_GEMINI] Startup skipped — no usable API key')
+    return
+  }
+
+  try {
+    const genAI = new GoogleGenerativeAI(apiKey)
+    const model = genAI.getGenerativeModel({ model: resolvedModel })
+    const result = await model.generateContent('ping', { timeout: Math.min(25_000, GEMINI_TIMEOUT_MS) })
+    const text = result.response.text()
+    void text
+    console.log('[JARVIS_GEMINI] startup ping ok')
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    console.error('[JARVIS_GEMINI] startup ping failed:', redactHttpUrls(msg))
+  }
+}
+
+/**
+ * One chat turn: `GoogleGenerativeAI` → `getGenerativeModel` → `generateContent(prompt)` → `response.text()`.
  */
 export async function completeGeminiChat(params: {
   messages: ChatMessage[]
-  model?: string
   signal?: AbortSignal
 }): Promise<string> {
   const apiKey = getEffectiveGeminiApiKey()
-  const targetModel = params.model?.trim() || resolveGeminiModel()
-
-  console.info('[JARVIS_GEMINI] env check', {
-    GEMINI_API_KEY_usable: Boolean(apiKey),
-    GEMINI_MODEL_env: readProcessEnv('GEMINI_MODEL') ?? '(unset → default)',
-    targetModel,
-    messageCount: params.messages.length,
-  })
-
   if (!apiKey) {
-    const raw = readProcessEnv('GEMINI_API_KEY')
+    const raw = process.env.GEMINI_API_KEY?.trim()
     if (!raw) {
       throw new Error(
         'GEMINI_API_KEY is missing. Add it to the project root `.env` (see https://aistudio.google.com/apikey).',
@@ -98,43 +67,26 @@ export async function completeGeminiChat(params: {
     throw new Error('GEMINI_API_KEY is set but looks like a placeholder — use a real key from Google AI Studio.')
   }
 
-  const systemInstruction = buildSystemInstruction(params.messages)
-  const contents = buildGeminiContents(params.messages)
-  if (contents.length === 0) {
-    throw new Error('Gemini: no user/model messages to send.')
+  const resolvedModel = resolveGeminiModel()
+  const prompt = buildPrompt(params.messages).trim()
+  if (!prompt) {
+    throw new Error('Gemini: empty prompt (no messages).')
   }
 
   const genAI = new GoogleGenerativeAI(apiKey)
-  const model = genAI.getGenerativeModel({
-    model: targetModel,
-    systemInstruction: systemInstruction.length > 0 ? systemInstruction : undefined,
-  })
+  const model = genAI.getGenerativeModel({ model: resolvedModel })
 
-  console.info('[JARVIS_GEMINI] generateContent start', { model: targetModel, contents: contents.length })
-
-  let result: Awaited<ReturnType<typeof model.generateContent>>
   try {
-    result = await model.generateContent({ contents }, { signal: params.signal, timeout: GEMINI_TIMEOUT_MS })
-  } catch (error) {
-    console.error('[JARVIS_GEMINI] generateContent failed (raw)', error)
-    mapGeminiFailure(error)
-  }
-
-  const usage = result.response.usageMetadata
-  if (usage) {
-    console.info('[JARVIS_GEMINI] usageMetadata', {
-      promptTokenCount: usage.promptTokenCount,
-      candidatesTokenCount: usage.candidatesTokenCount,
-      totalTokenCount: usage.totalTokenCount,
+    const result = await model.generateContent(prompt, {
+      signal: params.signal,
+      timeout: GEMINI_TIMEOUT_MS,
     })
-  }
-
-  try {
     const text = result.response.text().trim()
-    console.info('[JARVIS_GEMINI] generateContent success', { model: targetModel, outChars: text.length })
+    console.log('[JARVIS_GEMINI] chat ok')
     return text
-  } catch (err) {
-    console.error('[JARVIS_GEMINI] response.text() failed (blocked or empty candidates?)', err)
-    mapGeminiFailure(err)
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    console.error('[JARVIS_GEMINI] chat failed:', redactHttpUrls(msg))
+    throw new Error(redactHttpUrls(msg))
   }
 }

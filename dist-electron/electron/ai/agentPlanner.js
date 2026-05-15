@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { getEffectiveOpenAiApiKey, readProcessEnv } from './openAiEnv.js';
+import { canUseConfiguredGemini } from './geminiEnv.js';
+import { completeGeminiChat } from './providers/geminiProvider.js';
+import { extractJsonTextFromModel } from './utils/geminiJsonText.js';
 const planSchema = z.object({
     reasoning: z.string().min(5),
     steps: z
@@ -15,45 +17,38 @@ const planSchema = z.object({
         .min(1)
         .max(12),
 });
-export async function planGoalWithOpenAi(goal) {
-    const apiKey = getEffectiveOpenAiApiKey();
-    const model = readProcessEnv('OPENAI_PLANNER_MODEL') ?? readProcessEnv('OPENAI_MODEL') ?? 'gpt-4o-mini';
+export async function planGoalWithGemini(goal) {
     const now = new Date().toISOString();
-    if (!apiKey)
+    if (!canUseConfiguredGemini())
         return fallbackPlan(goal, now);
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-            model,
-            temperature: 0.2,
-            response_format: { type: 'json_object' },
-            messages: [
-                {
-                    role: 'system',
-                    content: 'You are a desktop automation planner. Return strict JSON: { reasoning, steps[] }. Keep steps safe and practical.',
-                },
-                {
-                    role: 'user',
-                    content: `Goal: ${goal}. Provide actionType in [open_application, open_path, open_url, run_terminal].`,
-                },
-            ],
-        }),
-    });
-    if (!response.ok)
+    try {
+        const messages = [
+            {
+                id: randomUUID(),
+                role: 'system',
+                createdAt: now,
+                content: 'You are a desktop automation planner. Return JSON only (no markdown): { reasoning, steps[] }. actionType must be one of: open_application, open_path, open_url, run_terminal.',
+            },
+            {
+                id: randomUUID(),
+                role: 'user',
+                createdAt: now,
+                content: `Goal: ${goal}. Provide actionType in [open_application, open_path, open_url, run_terminal].`,
+            },
+        ];
+        const raw = await completeGeminiChat({ messages });
+        const content = extractJsonTextFromModel(raw);
+        const parsed = planSchema.safeParse(JSON.parse(content));
+        if (!parsed.success)
+            return fallbackPlan(goal, now);
+        return toPlan(goal, now, parsed.data.reasoning, parsed.data.steps);
+    }
+    catch {
         return fallbackPlan(goal, now);
-    const payload = (await response.json());
-    const content = payload.choices?.[0]?.message?.content;
-    if (!content)
-        return fallbackPlan(goal, now);
-    const parsed = planSchema.safeParse(JSON.parse(content));
-    if (!parsed.success)
-        return fallbackPlan(goal, now);
-    return toPlan(goal, now, parsed.data.reasoning, parsed.data.steps);
+    }
 }
+/** @deprecated Use `planGoalWithGemini`; kept for older module paths. */
+export const planGoalWithOpenAi = planGoalWithGemini;
 function toPlan(goal, timestamp, reasoning, steps) {
     const mapped = steps.map((step, index) => ({
         id: randomUUID(),

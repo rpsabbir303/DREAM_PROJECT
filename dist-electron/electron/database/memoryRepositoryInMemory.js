@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { resolveGeminiModel } from '../ai/geminiEnv.js';
 import { cosineSimilarity, createLocalEmbedding } from '../ai/localEmbeddings.js';
 export function createInMemoryMemoryRepository() {
     const commandLogs = [];
@@ -29,20 +30,25 @@ export function createInMemoryMemoryRepository() {
     let settingsUpdatedAt = new Date().toISOString();
     function getAiSettingsImpl() {
         const map = aiKv;
+        const model = resolveGeminiModel();
         return {
-            preferredProvider: map.get('preferredProvider') ?? 'ollama',
+            preferredProvider: 'gemini',
             offlineMode: map.get('offlineMode') === 'true',
-            localModel: map.get('localModel') ?? 'llama3',
-            cloudModel: map.get('cloudModel') ?? 'gpt-4o-mini',
+            localModel: model,
+            cloudModel: model,
             reasoningThreshold: Number(map.get('reasoningThreshold') ?? '220'),
             updatedAt: settingsUpdatedAt,
         };
     }
     function saveAiSettingsImpl(settings) {
         const current = getAiSettingsImpl();
+        const model = resolveGeminiModel();
         const next = {
             ...current,
             ...settings,
+            preferredProvider: 'gemini',
+            localModel: model,
+            cloudModel: model,
             updatedAt: new Date().toISOString(),
         };
         settingsUpdatedAt = next.updatedAt;
@@ -724,11 +730,12 @@ export function createInMemoryMemoryRepository() {
                 });
             }
             if (!aiKv.has('preferredProvider')) {
+                const model = resolveGeminiModel();
                 saveAiSettingsImpl({
-                    preferredProvider: 'ollama',
+                    preferredProvider: 'gemini',
                     offlineMode: false,
-                    localModel: 'llama3',
-                    cloudModel: 'gpt-4o-mini',
+                    localModel: model,
+                    cloudModel: model,
                     reasoningThreshold: 220,
                 });
                 saveOverlayStateImpl({

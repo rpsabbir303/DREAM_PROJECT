@@ -6,7 +6,7 @@ import { createMemoryRepository } from '../database/memoryRepository.js';
 import { registerIpcHandlers } from '../ipc/registerHandlers.js';
 import { AssistantEnvironment } from '../overlay/assistantEnvironment.js';
 import { createSecureWindowConfig, logPreloadDiagnostics } from '../security/browserWindowConfig.js';
-import { probeOpenAiConnectivity } from '../ai/providers/openAiProvider.js';
+import { initializeJarvisGeminiOnStartup } from '../ai/providers/geminiProvider.js';
 let mainWindow = null;
 let assistantEnvironment = null;
 let isQuitting = false;
@@ -66,7 +66,7 @@ app.whenReady().then(() => {
         memoryRepository,
         assistantEnvironment,
     });
-    void probeOpenAiConnectivity();
+    void initializeJarvisGeminiOnStartup();
     scheduler.start();
     createWindow();
     assistantEnvironment.start();

@@ -1,8 +1,7 @@
 import { desktopClient } from '@/services/desktop/desktopClient'
 
 /**
- * Renderer-side orchestration facade for future OpenAI/Ollama integrations.
- * Keeps UI components decoupled from transport and execution details.
+ * Renderer-side orchestration facade for desktop AI intents (Gemini chat runs in Electron main).
  */
 export const chatEngine = {
   parseIntent(input: string) {

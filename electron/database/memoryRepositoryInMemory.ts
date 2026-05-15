@@ -38,6 +38,7 @@ import type {
   WorkflowSchedule,
   WorkspaceContext,
 } from '../../shared/interfaces/ipc.js'
+import { resolveGeminiModel } from '../ai/geminiEnv.js'
 import { cosineSimilarity, createLocalEmbedding } from '../ai/localEmbeddings.js'
 
 type MemoryEmbeddingRow = {
@@ -88,12 +89,12 @@ export function createInMemoryMemoryRepository(): MemoryRepository {
 
   function getAiSettingsImpl(): AiProviderSettings {
     const map = aiKv
+    const model = resolveGeminiModel()
     return {
-      preferredProvider:
-        (map.get('preferredProvider') as AiProviderSettings['preferredProvider']) ?? 'ollama',
+      preferredProvider: 'gemini',
       offlineMode: map.get('offlineMode') === 'true',
-      localModel: map.get('localModel') ?? 'llama3',
-      cloudModel: map.get('cloudModel') ?? 'gpt-4o-mini',
+      localModel: model,
+      cloudModel: model,
       reasoningThreshold: Number(map.get('reasoningThreshold') ?? '220'),
       updatedAt: settingsUpdatedAt,
     }
@@ -101,9 +102,13 @@ export function createInMemoryMemoryRepository(): MemoryRepository {
 
   function saveAiSettingsImpl(settings: Partial<AiProviderSettings>): AiProviderSettings {
     const current = getAiSettingsImpl()
+    const model = resolveGeminiModel()
     const next: AiProviderSettings = {
       ...current,
       ...settings,
+      preferredProvider: 'gemini',
+      localModel: model,
+      cloudModel: model,
       updatedAt: new Date().toISOString(),
     }
     settingsUpdatedAt = next.updatedAt
@@ -782,11 +787,12 @@ export function createInMemoryMemoryRepository(): MemoryRepository {
       }
 
       if (!aiKv.has('preferredProvider')) {
+        const model = resolveGeminiModel()
         saveAiSettingsImpl({
-          preferredProvider: 'ollama',
+          preferredProvider: 'gemini',
           offlineMode: false,
-          localModel: 'llama3',
-          cloudModel: 'gpt-4o-mini',
+          localModel: model,
+          cloudModel: model,
           reasoningThreshold: 220,
         })
         saveOverlayStateImpl({

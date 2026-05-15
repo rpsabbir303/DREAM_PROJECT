@@ -1,25 +1,24 @@
 import type { ChatMessage } from '../../shared/interfaces/ipc.js'
+import { resolveGeminiModel } from './geminiEnv.js'
 import { completeGeminiChat } from './providers/geminiProvider.js'
 
 /**
- * Basic Gemini chat: one non-streaming completion; one `onDelta` with full text (same contract as OpenAI MVP path).
+ * Basic Gemini chat: one non-streaming completion; one `onDelta` with full text.
  */
 export async function runJarvisGeminiBasic(params: {
   messages: ChatMessage[]
-  model: string
   streamId: string
   signal: AbortSignal
   onDelta: (chunk: string) => void
 }): Promise<string> {
   console.info('[JARVIS_GEMINI] basic chat (SDK, non-stream)', {
     streamId: params.streamId,
-    model: params.model,
+    model: resolveGeminiModel(),
     messageCount: params.messages.length,
   })
 
   const text = await completeGeminiChat({
     messages: params.messages,
-    model: params.model,
     signal: params.signal,
   })
   if (!text.trim()) {

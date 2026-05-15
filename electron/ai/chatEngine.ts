@@ -4,15 +4,15 @@ import { BASIC_CHAT_SYSTEM_PROMPT } from '../../shared/ai/basicChatMvp.js'
 import { IPC_CHANNELS } from '../../shared/constants/ipcChannels.js'
 import type { ChatMessage, ChatStartStreamInput, ChatStreamEvent } from '../../shared/interfaces/ipc.js'
 import type { MemoryRepository } from '../database/memoryRepository.js'
-import { getProviderStatus, routeProvider, streamWithProvider } from './providerRouter.js'
-import { runJarvisOpenAiWithTools } from './openAiJarvisPipeline.js'
+import { tryRunDesktopAutomationFromUserText } from '../automation/appControl.js'
+import { routeProvider } from './providerRouter.js'
+import { resolveGeminiModel } from './geminiEnv.js'
 import { runJarvisGeminiBasic } from './geminiJarvisPipeline.js'
 
 type Sender = WebContents
 
 /**
- * Basic MVP chat: one assistant reply per user turn via Gemini, OpenAI SDK, or Ollama (non-streaming).
- * No tool execution, no voice, no agent orchestration in this path.
+ * Basic MVP chat: one assistant reply per user turn via Google Gemini (non-streaming).
  */
 export class ChatEngine {
   private activeStreams = new Map<string, AbortController>()
@@ -41,9 +41,38 @@ export class ChatEngine {
 
       const userMessage = this.memoryRepository.addChatMessage({ role: 'user', content: input.input })
 
+      const automation = await tryRunDesktopAutomationFromUserText(input.input)
+      if (automation.handled) {
+        const finalText = automation.message
+        const startedLocal = Date.now()
+        console.info('[JARVIS_AI] desktop automation (no LLM)', input.streamId)
+        emit({
+          streamId: input.streamId,
+          type: 'provider',
+          data: {
+            provider: 'gemini',
+            model: resolveGeminiModel(),
+            reason: 'Local desktop automation (no LLM).',
+            isOffline: true,
+          },
+        })
+        emit({
+          streamId: input.streamId,
+          type: 'delta',
+          data: { chunk: finalText },
+        })
+        this.memoryRepository.addChatMessage({ role: 'assistant', content: finalText })
+        emit({
+          streamId: input.streamId,
+          type: 'complete',
+          data: { finalText },
+        })
+        console.info('[JARVIS_AI] automation turn complete', input.streamId, 'ms=', Date.now() - startedLocal)
+        return
+      }
+
       const settings = this.memoryRepository.getAiSettings()
-      const providerStatus = await getProviderStatus()
-      const decision = routeProvider(input.input, settings, providerStatus.ollamaReachable)
+      const decision = routeProvider(input.input, settings)
       console.info('[JARVIS_AI] provider', decision.provider, decision.model, decision.reason)
       emit({
         streamId: input.streamId,
@@ -66,57 +95,21 @@ export class ChatEngine {
       let finalText: string
 
       try {
-        if (decision.provider === 'gemini') {
-          finalText = await runJarvisGeminiBasic({
-            messages,
-            model: decision.model,
-            streamId: input.streamId,
-            signal: controller.signal,
-            onDelta: (chunk) => {
-              emit({
-                streamId: input.streamId,
-                type: 'delta',
-                data: { chunk },
-              })
-            },
-          })
-        } else if (decision.provider === 'openai') {
-          finalText = await runJarvisOpenAiWithTools({
-            messages,
-            model: decision.model,
-            streamId: input.streamId,
-            signal: controller.signal,
-            onDelta: (chunk) => {
-              emit({
-                streamId: input.streamId,
-                type: 'delta',
-                data: { chunk },
-              })
-            },
-          })
-        } else {
-          finalText = await streamWithProvider({
-            decision,
-            messages,
-            signal: controller.signal,
-            onDelta: (chunk) => {
-              emit({
-                streamId: input.streamId,
-                type: 'delta',
-                data: { chunk },
-              })
-            },
-          })
-        }
+        finalText = await runJarvisGeminiBasic({
+          messages,
+          streamId: input.streamId,
+          signal: controller.signal,
+          onDelta: (chunk) => {
+            emit({
+              streamId: input.streamId,
+              type: 'delta',
+              data: { chunk },
+            })
+          },
+        })
 
         if (!finalText.trim()) {
-          throw new Error(
-            decision.provider === 'ollama' ?
-              'The local model returned an empty reply. Check that Ollama is running and the model name is valid.'
-            : decision.provider === 'gemini' ?
-              'Gemini returned an empty reply. Check GEMINI_MODEL and API quotas.'
-            : 'The model returned an empty reply.',
-          )
+          throw new Error('Gemini returned an empty reply. Check GEMINI_MODEL and API quotas.')
         }
 
         this.memoryRepository.addAiProviderMetric({

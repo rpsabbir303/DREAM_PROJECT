@@ -24,7 +24,7 @@ const chatStartInputSchema = z.object({
 });
 const workflowPromptSchema = z.string().min(6).max(500);
 const aiSettingsUpdateSchema = z.object({
-    preferredProvider: z.enum(['openai', 'ollama', 'gemini']).optional(),
+    preferredProvider: z.enum(['gemini']).optional(),
     offlineMode: z.boolean().optional(),
     localModel: z.string().min(1).max(120).optional(),
     cloudModel: z.string().min(1).max(120).optional(),

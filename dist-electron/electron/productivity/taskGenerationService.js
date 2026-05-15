@@ -1,35 +1,28 @@
 import { randomUUID } from 'node:crypto';
-import { getEffectiveOpenAiApiKey, readProcessEnv } from '../ai/openAiEnv.js';
+import { canUseConfiguredGemini } from '../ai/geminiEnv.js';
+import { completeGeminiChat } from '../ai/providers/geminiProvider.js';
+import { extractJsonTextFromModel } from '../ai/utils/geminiJsonText.js';
 export async function generateDeveloperTasks(prompt) {
-    const apiKey = getEffectiveOpenAiApiKey();
-    if (!apiKey)
+    if (!canUseConfiguredGemini())
         return fallbackTasks(prompt);
     try {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${apiKey}`,
+        const now = new Date().toISOString();
+        const messages = [
+            {
+                id: randomUUID(),
+                role: 'system',
+                createdAt: now,
+                content: 'Return JSON only (no markdown) with field tasks[]. Each task has title, area(frontend|backend|qa|devops), priority(low|medium|high), steps:string[]. Max 6 tasks.',
             },
-            body: JSON.stringify({
-                model: readProcessEnv('OPENAI_MODEL') ?? 'gpt-4o-mini',
-                temperature: 0.2,
-                response_format: { type: 'json_object' },
-                messages: [
-                    {
-                        role: 'system',
-                        content: 'Return JSON with field tasks[]. Each task has title, area(frontend|backend|qa|devops), priority(low|medium|high), steps:string[]. Max 6 tasks.',
-                    },
-                    { role: 'user', content: prompt },
-                ],
-            }),
-        });
-        if (!response.ok)
-            return fallbackTasks(prompt);
-        const payload = (await response.json());
-        const content = payload.choices?.[0]?.message?.content;
-        if (!content)
-            return fallbackTasks(prompt);
+            {
+                id: randomUUID(),
+                role: 'user',
+                createdAt: now,
+                content: prompt,
+            },
+        ];
+        const raw = await completeGeminiChat({ messages });
+        const content = extractJsonTextFromModel(raw);
         const parsed = JSON.parse(content);
         if (!parsed.tasks || parsed.tasks.length === 0)
             return fallbackTasks(prompt);

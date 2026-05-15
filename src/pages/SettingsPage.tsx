@@ -12,7 +12,6 @@ export function SettingsPage() {
   const isLoadingAi = useSettingsStore((state) => state.isLoadingAi)
   const error = useSettingsStore((state) => state.error)
   const loadAiSettings = useSettingsStore((state) => state.loadAiSettings)
-  const updateAiSettings = useSettingsStore((state) => state.updateAiSettings)
   const searchSemanticMemory = useSettingsStore((state) => state.searchSemanticMemory)
   const overlayState = useOverlayStore((state) => state.state)
   const shortcutBindings = useOverlayStore((state) => state.shortcuts)
@@ -39,51 +38,25 @@ export function SettingsPage() {
     <GlassPanel className="min-h-[70vh]">
       <h3 className="text-lg font-semibold text-white">Settings</h3>
       <p className="mt-2 text-sm text-white/60">
-        MVP: AI provider, overlay shortcuts, and command-history search. Set API keys in the project root `.env`
-        (OpenAI and/or Gemini).
+        MVP: Gemini chat, overlay shortcuts, and command-history search. Set <code className="text-cyan-200/90">GEMINI_API_KEY</code> in the
+        project root `.env`.
       </p>
       {isLoadingAi && <p className="mt-2 text-xs text-cyan-300">Loading AI provider settings...</p>}
       {error && <p className="mt-2 text-xs text-red-300">{error}</p>}
       {aiSettings && (
         <div className="mt-4 space-y-4">
           <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-            <p className="text-xs uppercase tracking-[0.14em] text-white/45">AI Provider Routing</p>
-            <div className="mt-2 grid gap-2 sm:grid-cols-2">
-              <select
-                value={aiSettings.preferredProvider}
-                onChange={(event) =>
-                  void updateAiSettings({ preferredProvider: event.target.value as 'openai' | 'ollama' })
-                }
-                className="h-10 rounded-lg border border-white/10 bg-black/20 px-3 text-sm text-white"
-              >
-                <option value="ollama">Local (Ollama)</option>
-                <option value="openai">Cloud (OpenAI)</option>
-              </select>
-              <label className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-3 text-sm text-white">
-                Offline mode
-                <input
-                  type="checkbox"
-                  checked={aiSettings.offlineMode}
-                  onChange={(event) => void updateAiSettings({ offlineMode: event.target.checked })}
-                />
-              </label>
-              <input
-                value={aiSettings.localModel}
-                onChange={(event) => void updateAiSettings({ localModel: event.target.value })}
-                placeholder="Local model (llama3)"
-                className="h-10 rounded-lg border border-white/10 bg-black/20 px-3 text-sm text-white"
-              />
-              <input
-                value={aiSettings.cloudModel}
-                onChange={(event) => void updateAiSettings({ cloudModel: event.target.value })}
-                placeholder="Cloud model (gpt-4o-mini)"
-                className="h-10 rounded-lg border border-white/10 bg-black/20 px-3 text-sm text-white"
-              />
-            </div>
+            <p className="text-xs uppercase tracking-[0.14em] text-white/45">AI (Google Gemini)</p>
+            <p className="mt-2 text-sm text-white/80">
+              Provider: Gemini only — model <span className="text-cyan-200">{offlineStatus?.activeModel ?? '—'}</span>
+            </p>
             <p className="mt-2 text-xs text-white/60">
-              Cloud: {offlineStatus?.online ? 'OpenAI or Gemini key OK' : 'no cloud key'} | Gemini:{' '}
-              {offlineStatus?.geminiConfigured ? 'configured' : 'not configured'} | Ollama:{' '}
-              {offlineStatus?.ollamaReachable ? 'reachable' : 'not reachable'}
+              Key: {offlineStatus?.geminiConfigured ? 'GEMINI_API_KEY OK' : 'not configured or placeholder'} | Cloud ready:{' '}
+              {offlineStatus?.online ? 'yes' : 'no'}
+            </p>
+            <p className="mt-2 text-xs text-white/50">
+              Model id comes from <code className="text-white/70">GEMINI_MODEL</code> in the project root <code className="text-white/70">.env</code> (see Google AI Studio). Current:{' '}
+              <code className="text-cyan-200/90">{offlineStatus?.activeModel ?? '—'}</code>
             </p>
           </div>
 

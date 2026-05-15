@@ -29,6 +29,27 @@ export function canUseConfiguredGemini(): boolean {
   return getEffectiveGeminiApiKey() !== null
 }
 
+/**
+ * Model for `getGenerativeModel({ model })`.
+ * Default `gemini-2.5-flash` — verified on Google AI Studio keys (v1beta).
+ * Legacy ids like `gemini-1.5-flash` / `gemini-2.0-flash` often 404 on current API.
+ */
+const DEFAULT_MODEL = 'gemini-2.5-flash'
+
+const DEPRECATED_MODELS = new Set([
+  'gemini-1.5-flash',
+  'gemini-1.5-flash-latest',
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-lite',
+])
+
 export function resolveGeminiModel(): string {
-  return readProcessEnv('GEMINI_MODEL') ?? 'gemini-2.0-flash'
+  let id = (process.env.GEMINI_MODEL ?? '').trim()
+  if (id.toLowerCase().startsWith('models/')) {
+    id = id.slice('models/'.length).trim()
+  }
+  if (!id || DEPRECATED_MODELS.has(id)) {
+    return DEFAULT_MODEL
+  }
+  return id
 }

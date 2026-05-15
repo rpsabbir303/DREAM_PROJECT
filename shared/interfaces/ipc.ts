@@ -292,7 +292,8 @@ export interface AgentRunSummary {
   message: string
 }
 
-export type AiProvider = 'openai' | 'ollama' | 'gemini'
+/** Jarvis desktop MVP uses Google Gemini only. */
+export type AiProvider = 'gemini'
 
 export interface AiProviderSettings {
   preferredProvider: AiProvider
@@ -328,8 +329,9 @@ export interface AiProviderMetrics {
 /** Main-process snapshot for Settings / diagnostics (IPC). */
 export interface AiProviderRuntimeStatus {
   online: boolean
-  ollamaReachable: boolean
-  geminiConfigured?: boolean
+  geminiConfigured: boolean
+  /** Resolved short model id for `getGenerativeModel` (from `GEMINI_MODEL` or default). */
+  activeModel: string
 }
 
 export interface SemanticMemoryHit {
