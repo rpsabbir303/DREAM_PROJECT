@@ -43,8 +43,8 @@ function IconButton({
       title={title}
       onClick={onClick}
       className={cn(
-        'jarvis-btn-glass grid h-10 w-10 shrink-0 place-items-center rounded-xl text-white/50',
-        active && 'jarvis-btn-glass-active text-amber-50',
+        'jarvis-btn-glass grid h-9 w-9 shrink-0 place-items-center rounded-lg text-white/50',
+        active && 'jarvis-btn-glass-active text-white/90',
         disabled && 'cursor-not-allowed opacity-35',
       )}
     >
@@ -59,7 +59,7 @@ export function ChatCommandBar({
   onSubmit,
   isListening,
   isSpeaking,
-  isTranscribing,
+  isTranscribing: _isTranscribing,
   isCapturing,
   isAnalyzing,
   onToggleMic,
@@ -68,8 +68,6 @@ export function ChatCommandBar({
   onAnalyze,
   disabled,
 }: ChatCommandBarProps) {
-  const busy = isTranscribing || isAnalyzing
-
   return (
     <motion.form
       initial={{ opacity: 0, y: 20 }}
@@ -79,23 +77,19 @@ export function ChatCommandBar({
         e.preventDefault()
         onSubmit()
       }}
-      className="jarvis-dock-wrap relative mx-auto w-full max-w-3xl"
+      className="jarvis-dock-wrap relative mx-auto w-full max-w-2xl"
     >
-      <div className="jarvis-dock-glow" aria-hidden />
       <motion.div
-        className={cn(
-          'jarvis-dock flex items-center gap-2.5 rounded-2xl p-2.5 pl-5',
-          busy && 'jarvis-pulse',
-        )}
-        whileHover={{ y: -3 }}
-        transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+        className="jarvis-dock flex items-center gap-2 rounded-xl p-2 pl-4"
+        whileHover={{ y: -1 }}
+        transition={{ duration: 0.18 }}
       >
         <input
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="Ask anything…"
           disabled={disabled}
-          className="jarvis-input min-h-[48px] flex-1 bg-transparent text-[15px] font-medium tracking-wide text-white/93 placeholder:font-normal placeholder:tracking-normal placeholder:text-white/28 disabled:opacity-50"
+          className="jarvis-input min-h-[42px] flex-1 bg-transparent text-[14px] text-white/93 placeholder:font-normal placeholder:text-white/28 disabled:opacity-50"
         />
         <div className="flex shrink-0 items-center gap-1.5 pr-1">
           <IconButton

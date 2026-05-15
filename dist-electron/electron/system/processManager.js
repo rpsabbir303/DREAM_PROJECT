@@ -4,6 +4,7 @@
  * Detects, lists, and terminates Windows processes.
  * All operations are async and non-blocking.
  */
+import { safeLogger } from '../main/safeLogger.js';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 const execAsync = promisify(exec);
@@ -22,7 +23,7 @@ export async function isProcessRunning(imageName) {
 export async function detectFirstRunning(imageNames) {
     for (const name of imageNames) {
         if (await isProcessRunning(name)) {
-            console.log('[JARVIS_PROC] detected', name);
+            safeLogger.info('[JARVIS_PROC] detected', name);
             return name;
         }
     }

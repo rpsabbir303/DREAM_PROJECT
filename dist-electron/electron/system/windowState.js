@@ -9,6 +9,7 @@
  *
  * Call startWindowTracking() once from main/index.ts after app.whenReady().
  */
+import { safeLogger } from '../main/safeLogger.js';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { runtimeState as _runtimeStateRef, setActiveWindow, setRunningApps, } from './runtimeState.js';
@@ -130,7 +131,7 @@ async function pollActiveWindow() {
             _lastActivePid = pid;
             const prev = previous === -1 ? null : null; // will be filled by runtimeState's previous
             systemEvents.emit('focus_changed', { from: prev, to: snap });
-            console.log(`[JARVIS_WIN] focus → ${snap.appName} (${processName}) pid=${pid} state=${windowState}`);
+            safeLogger.info(`[JARVIS_WIN] focus → ${snap.appName} (${processName}) pid=${pid} state=${windowState}`);
         }
     }
     catch {
@@ -185,7 +186,7 @@ async function pollRunningApps() {
 export function startWindowTracking() {
     if (activeWindowTimer)
         return;
-    console.log('[JARVIS_WIN] window tracking started');
+    safeLogger.info('[JARVIS_WIN] window tracking started');
     void pollActiveWindow();
     void pollRunningApps();
     activeWindowTimer = setInterval(() => { void pollActiveWindow(); }, ACTIVE_WINDOW_POLL_MS);
@@ -201,7 +202,7 @@ export function stopWindowTracking() {
         clearInterval(runningAppsTimer);
         runningAppsTimer = null;
     }
-    console.log('[JARVIS_WIN] window tracking stopped');
+    safeLogger.info('[JARVIS_WIN] window tracking stopped');
 }
 /**
  * Synchronous in-process check: is a given process name currently running?

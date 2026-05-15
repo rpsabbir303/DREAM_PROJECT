@@ -19,11 +19,45 @@ export function extractPathHintsFromHistory(history, maxMessages = 10) {
     }
     return [...hints].slice(-4);
 }
-/** Strips soft prefixes so "Can you open Chrome?" classifies like "Open Chrome?". */
+/**
+ * Strips conversational prefixes so natural phrasing classifies like bare commands.
+ * Applied repeatedly until no more prefix patterns match.
+ */
 export function stripCommandPreamble(raw) {
     let s = raw.trim();
-    s = s.replace(/^(can\s+you\s+|could\s+you\s+|would\s+you\s+|please\s+|pls\s+)/i, '');
-    s = s.replace(/^(hey\s+|hi\s+)?(jarvis\s*,?\s*)+/i, '');
+    // Order matters: more specific patterns first to avoid partial-stripping
+    const patterns = [
+        // ── Direct address ────────────────────────────────────────────────────
+        /^(hey\s+|hi\s+|ok\s+|okay\s+|yo\s+|hello\s+)?(jarvis\s*,?\s*)+/i,
+        /^(dear\s+jarvis\s*,?\s*)/i,
+        // ── Politeness / auxiliary ────────────────────────────────────────────
+        /^(please\s+|pls\s+|kindly\s+)/i,
+        /^(can\s+you\s+|could\s+you\s+|would\s+you\s+|will\s+you\s+)/i,
+        /^(can\s+you\s+please\s+|could\s+you\s+please\s+|would\s+you\s+please\s+)/i,
+        // ── Narrative / instructional ─────────────────────────────────────────
+        /^(i\s+say\s+|i\s+said\s+)/i,
+        /^(tell\s+me\s+to\s+|remind\s+me\s+to\s+)/i,
+        /^(go\s+ahead\s+and\s+|go\s+on\s+and\s+)/i,
+        /^(just\s+|simply\s+|quickly\s+|rapidly\s+)/i,
+        // ── Softeners / hedges ────────────────────────────────────────────────
+        /^(try\s+to\s+|try\s+and\s+)/i,
+        /^(make\s+sure\s+(?:to\s+)?|be\s+sure\s+to\s+)/i,
+        /^(help\s+me\s+(?:to\s+)?)/i,
+        // ── Time / context ────────────────────────────────────────────────────
+        /^(for\s+me\s*,?\s*)/i,
+        /^(actually\s*,?\s*|basically\s*,?\s*|literally\s*,?\s*)/i,
+    ];
+    let changed = true;
+    while (changed) {
+        changed = false;
+        for (const re of patterns) {
+            const next = s.replace(re, '').trim();
+            if (next !== s) {
+                s = next;
+                changed = true;
+            }
+        }
+    }
     return s.trim();
 }
 /**

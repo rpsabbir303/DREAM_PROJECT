@@ -8,6 +8,7 @@
  *   4. Reports step-by-step progress via callback
  *   5. Emits plan_step events on systemEvents bus
  */
+import { safeLogger } from '../main/safeLogger.js';
 import { planGoalWithGemini } from '../ai/agentPlanner.js';
 import { executeIntent } from '../plugins/pluginRegistry.js';
 import { getRiskLevel } from '../security/actionGuard.js';
@@ -55,7 +56,7 @@ function stepToIntent(step, rawGoal) {
  * Returns a summary string of all steps.
  */
 export async function executePlan(goal, onProgress) {
-    console.log(`[JARVIS_PLANNER] starting plan for goal="${goal}"`);
+    safeLogger.info(`[JARVIS_PLANNER] starting plan for goal="${goal}"`);
     const plan = await planGoalWithGemini(goal);
     const total = plan.steps.length;
     const lines = [
@@ -67,7 +68,7 @@ export async function executePlan(goal, onProgress) {
         const step = plan.steps[i];
         const stepNum = i + 1;
         const intent = stepToIntent(step, goal);
-        console.log(`[JARVIS_PLANNER] step ${stepNum}/${total} — "${step.title}" (${step.actionType} → ${step.target})`);
+        safeLogger.info(`[JARVIS_PLANNER] step ${stepNum}/${total} — "${step.title}" (${step.actionType} → ${step.target})`);
         if (!intent) {
             const msg = `${stepNum}. ${step.title} — ⚠️ skipped (action not supported yet)`;
             lines.push(msg);
@@ -97,6 +98,6 @@ export async function executePlan(goal, onProgress) {
     }
     lines.push('', 'All steps complete.');
     const summary = lines.join('\n');
-    console.log(`[JARVIS_PLANNER] done — goal="${goal}"`);
+    safeLogger.info(`[JARVIS_PLANNER] done — goal="${goal}"`);
     return summary;
 }

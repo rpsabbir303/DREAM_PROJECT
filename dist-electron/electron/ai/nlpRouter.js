@@ -1,8 +1,8 @@
 /**
- * NLP Router — Phase 6 (v2)
+ * NLP Router — Phase 7
  *
  * Converts natural language into a typed ResolvedIntent via deterministic
- * pattern matching. No LLM required for supported commands.
+ * pattern matching + fuzzy alias resolution. No LLM required for supported commands.
  *
  * Returns null → Gemini handles general chat / complex requests.
  *
@@ -14,112 +14,96 @@
  *   5. File ops         (create/delete/move/rename/search)
  *   6. Window info      (list, active)
  *   7. Agent planning   (multi-step goal)
+ *
+ * Input normalization pipeline (runs BEFORE matching):
+ *   stripCommandPreamble → basicClean → removeFillerWords
+ *   → applyDesirePatterns → normalizeAppTokens → CONVERSATIONAL_PREFIXES loop
  */
+import { safeLogger } from '../main/safeLogger.js';
 import { stripCommandPreamble } from './commandContext.js';
 import { getRiskLevel } from '../security/actionGuard.js';
 import { fuzzyResolveSync } from '../system/appDiscovery.js';
+import { normalizeInput, normalizeAppTokens } from './nlp/normalize.js';
+import { resolveAppKey, getAppCandidates } from './nlp/aliases.js';
+import { fuzzyMatchAppKey } from './nlp/fuzzyMatcher.js';
+import { classifyPrimaryIntent, MIN_DISCOVERY_QUERY_LEN, MIN_FUZZY_TARGET_LEN } from './nlp/intentClassifier.js';
 // ─── Builder ─────────────────────────────────────────────────────────────────
 function make(type, params, rawInput, confidence, displayLabel) {
     return { type, params, rawInput, confidence, riskLevel: getRiskLevel(type), displayLabel };
 }
 // ─── Normaliser ───────────────────────────────────────────────────────────────
-/** Strips soft preambles and normalises whitespace / punctuation. */
-function normalise(raw) {
-    return stripCommandPreamble(raw)
-        .toLowerCase()
-        .replace(/[''`]/g, "'")
-        .replace(/\s+/g, ' ')
-        .replace(/[.!?,;]+$/, '')
-        .trim();
-}
-// ─── Known app alias table ────────────────────────────────────────────────────
-//
-// This is the CANONICAL list of natural-language app names that the router
-// understands. Matching here guarantees we NEVER fall through to Gemini for
-// these apps.  Keep sorted by key for readability.
-//
-// The key is the canonical app key used in appRegistry.ts.
-// The values are all valid natural-language names (lowercased, trimmed).
-const APP_ALIASES = {
-    brave: ['brave', 'brave browser'],
-    calculator: ['calculator', 'calc', 'calculation'],
-    chrome: ['chrome', 'google chrome', 'chrome browser', 'browser', 'google browser'],
-    cmd: ['cmd', 'command prompt', 'command line', 'dos', 'cmd prompt'],
-    cursor: ['cursor', 'cursor editor', 'cursor ide', 'cursor app'],
-    discord: ['discord'],
-    docker: ['docker', 'docker desktop'],
-    edge: ['edge', 'microsoft edge', 'ms edge', 'edge browser'],
-    epicgames: ['epic games', 'epic', 'epic games launcher', 'epic launcher'],
-    excel: ['excel', 'microsoft excel', 'ms excel', 'spreadsheet'],
-    explorer: ['file explorer', 'explorer', 'windows explorer', 'files', 'folders',
-        'my computer', 'this pc', 'my pc', 'file manager', 'explorer.exe'],
-    figma: ['figma'],
-    firefox: ['firefox', 'mozilla firefox', 'mozilla'],
-    illustrator: ['illustrator', 'adobe illustrator', 'ai illustrator'],
-    notepad: ['notepad', 'note pad', 'notes', 'text editor', 'notepad app'],
-    notepadpp: ['notepad++', 'notepad plus', 'notepad plus plus', 'npp'],
-    obs: ['obs', 'obs studio', 'screen recorder', 'obs recorder'],
-    opera: ['opera', 'opera browser', 'opera gx'],
-    outlook: ['outlook', 'microsoft outlook', 'ms outlook', 'outlook mail'],
-    paint: ['paint', 'ms paint', 'microsoft paint', 'mspaint'],
-    photoshop: ['photoshop', 'adobe photoshop', 'ps photoshop'],
-    postman: ['postman', 'postman api'],
-    powerpoint: ['powerpoint', 'ppt', 'microsoft powerpoint', 'ms powerpoint', 'presentation'],
-    powershell: ['powershell', 'pwsh', 'ps shell', 'windows powershell'],
-    skype: ['skype', 'microsoft skype'],
-    slack: ['slack', 'slack app'],
-    snipping: ['snipping tool', 'snip', 'snipping', 'snip tool', 'screen snip'],
-    spotify: ['spotify', 'spotify music', 'spotify app'],
-    steam: ['steam', 'steam client', 'steam launcher'],
-    sublimetext: ['sublime text', 'sublime', 'subl'],
-    taskmanager: ['task manager', 'taskmgr', 'task mgr', 'process manager'],
-    teams: ['teams', 'microsoft teams', 'ms teams', 'teams app'],
-    telegram: ['telegram', 'tg', 'telegram desktop'],
-    vlc: ['vlc', 'vlc player', 'vlc media player', 'video player'],
-    vscode: ['vscode', 'vs code', 'visual studio code', 'code', 'vs-code', 'code editor'],
-    whatsapp: ['whatsapp', 'whats app', "what's app", 'wa', 'whatsapp desktop'],
-    windowsterminal: ['windows terminal', 'terminal', 'wt', 'win terminal'],
-    word: ['word', 'microsoft word', 'ms word', 'word processor'],
-    zoom: ['zoom', 'zoom meeting', 'zoom app'],
-};
-/** Flat reverse map: alias → appKey (built once at module load) */
-const ALIAS_TO_KEY = new Map();
-for (const [key, aliases] of Object.entries(APP_ALIASES)) {
-    for (const alias of aliases) {
-        ALIAS_TO_KEY.set(alias, key);
-    }
-}
+/** Below this → route to Gemini chat, never execute automation. */
+export const DESKTOP_INTENT_CONFIDENCE_FLOOR = 0.70;
+/** At or above this → execute immediately. Between floor and this → clarify first. */
+export const DESKTOP_INTENT_AUTO_EXECUTE = 0.90;
+const CONVERSATIONAL_PREFIXES = [
+    /^i\s+say\s+/,
+    /^i\s+said\s+/,
+    /^tell\s+me\s+to\s+/,
+    /^go\s+ahead\s+and\s+/,
+    /^just\s+/,
+    /^um\s+/,
+    /^uh\s+/,
+];
+const DESKTOP_VERB_RE = /\b(open|launch|start|run|close|quit|exit|stop|switch\s+to|go\s+to|focus(?:\s+on)?|activate|minimize|minimise|maximize|maximise|restart|relaunch)\s+(.+)$/i;
 /**
- * Resolve a natural-language app phrase to its canonical key.
- * Tries exact → then prefix → then substring match.
+ * Full normalization pipeline:
+ *   1. stripCommandPreamble — "hey jarvis", "can you", "please" …
+ *   2. normalizeInput       — basicClean + removeFillerWords + applyDesirePatterns + normalizeAppTokens
+ *   3. CONVERSATIONAL_PREFIXES loop — remaining noise
+ *   4. Another pass of stripCommandPreamble + normalizeAppTokens
  */
-function resolveAppKey(phrase) {
-    const p = phrase.trim().toLowerCase();
-    if (!p)
-        return null;
-    // 1. Exact match
-    const exact = ALIAS_TO_KEY.get(p);
-    if (exact)
-        return exact;
-    // 2. Phrase starts with a known alias (e.g. "chrome browser extension" → chrome)
-    for (const [alias, key] of ALIAS_TO_KEY) {
-        if (p === alias || p.startsWith(`${alias} `))
-            return key;
+function normalise(raw) {
+    // Step 1: remove address/politeness prefixes
+    let s = stripCommandPreamble(raw);
+    // Step 2: full NLP pipeline (desire patterns, filler, app token fixes)
+    s = normalizeInput(s);
+    // Step 3: loop away any remaining conversational noise
+    let prev = '';
+    while (prev !== s) {
+        prev = s;
+        for (const re of CONVERSATIONAL_PREFIXES) {
+            s = s.replace(re, '').trim();
+        }
+        s = stripCommandPreamble(s);
+        s = normalizeAppTokens(s);
     }
-    // 3. A known alias is contained within the phrase
-    for (const [alias, key] of ALIAS_TO_KEY) {
-        if (p.includes(alias))
-            return key;
-    }
-    return null;
+    return s.trim();
 }
+/** If a desktop verb appears mid-utterance, peel to "verb …" form. */
+function peelToLeadingCommand(s) {
+    const m = s.match(DESKTOP_VERB_RE);
+    if (!m)
+        return s;
+    const verb = m[1].replace(/\s+/g, ' ');
+    const rest = m[2].trim();
+    const peeled = `${verb} ${rest}`.trim();
+    if (peeled.length >= 4 && peeled !== s && !s.startsWith(`${verb} `)) {
+        safeLogger.info(`[JARVIS_NLP] peeled embedded command → "${peeled}"`);
+        return peeled;
+    }
+    return s;
+}
+function blocksGeminiFallback(intent) {
+    return intent !== null && intent.confidence >= DESKTOP_INTENT_AUTO_EXECUTE;
+}
+// ─── App alias resolution ─────────────────────────────────────────────────────
+//
+// Alias table, reverse map, and resolveAppKey are now in ./nlp/aliases.ts.
+// This wrapper adds fuzzy fallback via ./nlp/fuzzyMatcher.ts.
+/**
+ * Resolve a phrase to an appKey:
+ *   1. Static alias table (exact / prefix / substring)  — aliases.ts
+ *   2. Fuzzy match (typos, near-misses)                  — fuzzyMatcher.ts
+ * Returns null if nothing is confident enough.
+ */
 // ─── Verb groups ──────────────────────────────────────────────────────────────
-const V_OPEN = /^(open|launch|start|run|fire up|bring up|pull up|load|open up|get|start up|boot|spin up)\s+/;
-const V_CLOSE = /^(close|quit|exit|stop|kill|end|terminate|shut|force close|force quit)\s+/;
-const V_FOCUS = /^(focus|switch to|go to|switch|activate|bring|show|navigate to|jump to)\s+(the\s+|my\s+)?/;
-const V_MINIMIZE = /^(minimize|minimise|hide|send to taskbar|collapse)\s+(the\s+|my\s+)?/;
-const V_MAXIMIZE = /^(maximize|maximise|fullscreen|full screen|expand|restore|make full|enlarge)\s+(the\s+|my\s+)?/;
-const V_RESTART = /^(restart|relaunch|reload|reopen|reset)\s+(the\s+|my\s+)?/;
+const V_OPEN = /^(open|launch|start|run|fire up|bring up|pull up|load|open up|get|start up|boot|spin up|use|access|go to|visit|navigate to|try)\s+/;
+const V_CLOSE = /^(close|quit|exit|stop|kill|end|terminate|shut|force close|force quit|kill off|shut down)\s+/;
+const V_FOCUS = /^(focus|switch to|go to|switch|activate|bring|show|navigate to|jump to|go back to|return to)\s+(the\s+|my\s+)?/;
+const V_MINIMIZE = /^(minimize|minimise|hide|send to taskbar|collapse|shrink)\s+(the\s+|my\s+)?/;
+const V_MAXIMIZE = /^(maximize|maximise|fullscreen|full screen|expand|restore|make full|enlarge|make bigger)\s+(the\s+|my\s+)?/;
+const V_RESTART = /^(restart|relaunch|reload|reopen|reset|refresh)\s+(the\s+|my\s+)?/;
 const ARTICLE = /^(the|my|a|an|some)\s+/;
 function stripVerb(s, re) {
     const m = s.match(re);
@@ -129,19 +113,80 @@ function stripVerb(s, re) {
 }
 // ─── Domain: App control ──────────────────────────────────────────────────────
 /**
- * Resolve an app phrase using both the static alias table AND the live discovery cache.
- * Returns { appKey?, discoveryName? } — at least one will be set if a match is found.
+ * Resolve an app phrase using the full resolution chain:
+ *   1. Static alias table (exact/prefix/substring) + fuzzy typo matching
+ *   2. Live discovery registry (system-installed apps, sync cache)
  */
+/** WhatsApp / common typo phrases — always resolve before discovery fuzzy. */
+function resolveKnownAppPhrase(phrase) {
+    const p = normalizeAppTokens(phrase.trim().toLowerCase());
+    if (/^(what'?s?\s*app|what'?app|whats?\s*app|what\s+s\s+app|whatsapp|wa)$/i.test(p))
+        return 'whatsapp';
+    if (/^(chrome|google\s*chrome|chorme|chrom)$/i.test(p))
+        return 'chrome';
+    if (/^(vscode|vs\s*code|visual\s*studio\s*code)$/i.test(p))
+        return 'vscode';
+    if (/^(notepad|note\s*pad)$/i.test(p))
+        return 'notepad';
+    if (/^(explorer|file\s*explorer|files)$/i.test(p))
+        return 'explorer';
+    return null;
+}
+/** Windows discovery sometimes surfaces help/update strings as "apps". */
+function isJunkDiscoveryName(canonicalName) {
+    const n = canonicalName.toLowerCase();
+    if (/\b(what\s+is\s+new|latest\s+version|release\s+notes|getting\s+started)\b/i.test(n))
+        return true;
+    if (/\b(is|are|was|will|can)\b/.test(n) && n.split(/\s+/).length >= 4)
+        return true;
+    return false;
+}
+/** Reject discovery/shell matches that are clearly not app names. */
+function isPlausibleAppTarget(phrase) {
+    const p = phrase.trim().toLowerCase();
+    if (!p || p.length < 2)
+        return false;
+    if (/\b(is|are|was|will|can|should|would)\b/.test(p) && p.split(/\s+/).length >= 3)
+        return false;
+    if (/\b(what\s+is|latest\s+version|new\s+in|is\s+new)\b/i.test(p))
+        return false;
+    if (/^what\s+app$/i.test(p))
+        return false; // use resolveKnownAppPhrase instead
+    if (p.split(/\s+/).length > 4)
+        return false;
+    return true;
+}
 function resolveAppTarget(phrase) {
-    // 1. Static alias table (exact/prefix/substring)
-    const staticKey = resolveAppKey(phrase);
+    const p = normalizeAppTokens(phrase.trim());
+    if (p.length < MIN_FUZZY_TARGET_LEN) {
+        return null;
+    }
+    const known = resolveKnownAppPhrase(p);
+    if (known)
+        return { appKey: known };
+    if (!isPlausibleAppTarget(p)) {
+        safeLogger.info(`[JARVIS_NLP] reject implausible target — "${p}"`);
+        return null;
+    }
+    // 1. Alias table + fuzzy (stricter threshold for short targets)
+    const fuzzyThreshold = p.length <= 5 ? 0.88 : 0.65;
+    const staticKey = resolveAppKey(p);
     if (staticKey)
         return { appKey: staticKey };
-    // 2. Live discovery registry (fuzzy, sync — no await needed, uses cache)
-    const discovered = fuzzyResolveSync(phrase, 60);
-    if (discovered) {
-        console.log(`[JARVIS_NLP] discovery match — "${phrase}" → "${discovered.app.canonicalName}" (score=${discovered.score})`);
-        return { discoveryName: discovered.app.canonicalName };
+    const fuzzy = fuzzyMatchAppKey(p, fuzzyThreshold);
+    if (fuzzy)
+        return { appKey: fuzzy.key };
+    // 2. Live discovery registry (never for queries under 4 chars)
+    if (p.length >= MIN_DISCOVERY_QUERY_LEN) {
+        const minScore = p.length <= 5 ? 85 : 60;
+        const discovered = fuzzyResolveSync(p, minScore);
+        if (discovered && !isJunkDiscoveryName(discovered.app.canonicalName)) {
+            safeLogger.info(`[JARVIS_NLP] discovery match — "${phrase}" → "${discovered.app.canonicalName}" (score=${discovered.score})`);
+            return { discoveryName: discovered.app.canonicalName };
+        }
+        if (discovered) {
+            safeLogger.info(`[JARVIS_NLP] rejected junk discovery — "${discovered.app.canonicalName}" for "${phrase}"`);
+        }
     }
     return null;
 }
@@ -160,8 +205,10 @@ function looksLikeAppName(phrase) {
 }
 function matchApp(s, raw) {
     let target;
+    const normTarget = (phrase) => normalizeAppTokens(phrase.trim());
     // Open
     if ((target = stripVerb(s, V_OPEN)) !== null) {
+        target = normTarget(target);
         const resolved = resolveAppTarget(target);
         if (resolved) {
             const { appKey, discoveryName } = resolved;
@@ -170,24 +217,31 @@ function matchApp(s, raw) {
                 params.appKey = appKey;
             if (discoveryName)
                 params.discoveryName = discoveryName;
+            // Detect ambiguity: if the phrase is very generic (e.g. "editor") and
+            // maps to multiple candidates, annotate with alternatives for a helpful message.
+            const candidates = getAppCandidates(target).filter((k) => k !== (appKey ?? discoveryName));
+            if (candidates.length >= 2 && target.split(' ').length <= 2) {
+                params.alternatives = candidates.slice(0, 3).join(',');
+                safeLogger.info(`[JARVIS_NLP] ambiguous open — target="${target}" candidates=[${candidates.slice(0, 3).join(', ')}]`);
+            }
             const label = appKey ?? discoveryName ?? target;
-            console.log(`[JARVIS_NLP] matched app.open — raw="${target}" key="${appKey ?? '—'}" discovery="${discoveryName ?? '—'}"`);
+            safeLogger.info(`[JARVIS_NLP] matched app.open — raw="${target}" key="${appKey ?? '—'}" discovery="${discoveryName ?? '—'}"`);
             return make('app.open', params, raw, 0.95, `Open ${label}`);
         }
-        // No static or discovery match — but still route if it looks like an app name
-        // The appPlugin will attempt all fallback strategies including `start <name>`
-        if (looksLikeAppName(target)) {
-            console.log(`[JARVIS_NLP] matched app.open (universal fallback) — raw="${target}"`);
-            return make('app.open', { app: target }, raw, 0.82, `Open ${target}`);
+        // Only open with appKey from aliases — never shell-launch unknown multi-word phrases
+        const knownOnly = resolveKnownAppPhrase(target);
+        if (knownOnly) {
+            return make('app.open', { app: target, appKey: knownOnly }, raw, 0.95, `Open ${knownOnly}`);
         }
         return null;
     }
     // Close
     if ((target = stripVerb(s, V_CLOSE)) !== null) {
+        target = normTarget(target);
         const resolved = resolveAppTarget(target);
         if (resolved) {
             const params = { app: target, ...(resolved.appKey ? { appKey: resolved.appKey } : {}) };
-            console.log(`[JARVIS_NLP] matched app.close — raw="${target}" key="${resolved.appKey ?? '—'}"`);
+            safeLogger.info(`[JARVIS_NLP] matched app.close — raw="${target}" key="${resolved.appKey ?? '—'}"`);
             return make('app.close', params, raw, 0.95, `Close ${target}`);
         }
         if (looksLikeAppName(target)) {
@@ -197,9 +251,10 @@ function matchApp(s, raw) {
     }
     // Focus / switch
     if ((target = stripVerb(s, V_FOCUS)) !== null) {
+        target = normTarget(target);
         const resolved = resolveAppTarget(target);
         const params = { app: target, ...(resolved?.appKey ? { appKey: resolved.appKey } : {}) };
-        console.log(`[JARVIS_NLP] matched app.focus — raw="${target}"`);
+        safeLogger.info(`[JARVIS_NLP] matched app.focus — raw="${target}"`);
         return make('app.focus', params, raw, 0.9, `Focus ${target}`);
     }
     // Minimize
@@ -224,6 +279,9 @@ function matchApp(s, raw) {
     if (/^(list|show|what'?s?)\s+(all\s+)?(open|running|active)\s+(apps?|applications?|windows?|programs?)/.test(s)) {
         return make('window.list', {}, raw, 0.92, 'List running apps');
     }
+    // ── Bare app name (no verb) — DISABLED for safety ───────────────────────
+    // Bare names like "chrome" without a verb caused false positives ("hi" → history).
+    // Users must say "open chrome". Unknown bare names fall through to Gemini chat.
     return null;
 }
 // ─── Domain: Special folders ──────────────────────────────────────────────────
@@ -246,7 +304,7 @@ function matchFolderOpen(s, raw) {
     const key = SPECIAL_FOLDER_ALIASES[candidate];
     if (!key)
         return null;
-    console.log(`[JARVIS_NLP] matched folder.open — folder="${key}"`);
+    safeLogger.info(`[JARVIS_NLP] matched folder.open — folder="${key}"`);
     return make('folder.open', { folder: key }, raw, 0.95, `Open ${key}`);
 }
 // ─── Domain: File operations ──────────────────────────────────────────────────
@@ -255,21 +313,21 @@ function matchFile(s, raw) {
     const mkdirMatch = s.match(/^(?:create|make|new)\s+(?:a\s+)?(?:new\s+)?folder\s+(?:called|named|with name)?\s*"?([^"]+)"?$/);
     if (mkdirMatch) {
         const name = mkdirMatch[1].trim();
-        console.log(`[JARVIS_NLP] matched folder.create — name="${name}"`);
+        safeLogger.info(`[JARVIS_NLP] matched folder.create — name="${name}"`);
         return make('folder.create', { name }, raw, 0.92, `Create folder "${name}"`);
     }
     // Create file
     const mkfileMatch = s.match(/^(?:create|make|new)\s+(?:a\s+)?(?:new\s+)?(?:text\s+|empty\s+)?file\s+(?:called|named|with name)?\s*"?([^"]+)"?$/);
     if (mkfileMatch) {
         const name = mkfileMatch[1].trim();
-        console.log(`[JARVIS_NLP] matched file.create — name="${name}"`);
+        safeLogger.info(`[JARVIS_NLP] matched file.create — name="${name}"`);
         return make('file.create', { name }, raw, 0.92, `Create file "${name}"`);
     }
     // Search
     const searchMatch = s.match(/^(?:search|find|look for|locate|search for)\s+(?:files?\s+(?:called|named)?\s+)?(?:for\s+)?"?([^"]{2,80})"?$/);
     if (searchMatch) {
         const query = searchMatch[1].trim();
-        console.log(`[JARVIS_NLP] matched file.search — query="${query}"`);
+        safeLogger.info(`[JARVIS_NLP] matched file.search — query="${query}"`);
         return make('file.search', { query }, raw, 0.88, `Search for "${query}"`);
     }
     // Delete
@@ -296,7 +354,7 @@ function matchSystem(s, raw) {
     if (/^(mute|unmute|toggle mute|toggle volume)(\s+volume)?$/.test(s)
         || /^(turn off|turn on)\s+(the\s+)?volume$/.test(s)
         || s === 'mute' || s === 'unmute') {
-        console.log('[JARVIS_NLP] matched system.volume mute');
+        safeLogger.info('[JARVIS_NLP] matched system.volume mute');
         return make('system.volume', { action: 'mute' }, raw, 0.97, 'Toggle mute');
     }
     // Volume set
@@ -317,12 +375,12 @@ function matchSystem(s, raw) {
         return make('system.brightness', { level: bright[1] }, raw, 0.92, `Brightness → ${bright[1]}%`);
     // Screenshot
     if (/^(take|capture|screenshot|snap|grab screen|screen shot|take a screenshot|capture screen|take screenshot|ss)/.test(s)) {
-        console.log('[JARVIS_NLP] matched system.screenshot');
+        safeLogger.info('[JARVIS_NLP] matched system.screenshot');
         return make('system.screenshot', {}, raw, 0.97, 'Take screenshot');
     }
     // Lock
     if (/^(lock|lock (the )?(pc|computer|screen|windows|machine|workstation)|lock screen)/.test(s)) {
-        console.log('[JARVIS_NLP] matched system.lock');
+        safeLogger.info('[JARVIS_NLP] matched system.lock');
         return make('system.lock', {}, raw, 0.97, 'Lock screen');
     }
     // Sleep
@@ -379,24 +437,24 @@ const DOMAIN_RE = /^(?:open|go to|visit|navigate to|browse to)\s+([\w-]+\.[\w.]{
 function matchBrowser(s, raw) {
     const urlM = s.match(URL_RE);
     if (urlM) {
-        console.log(`[JARVIS_NLP] matched browser.url — ${urlM[1]}`);
+        safeLogger.info(`[JARVIS_NLP] matched browser.url — ${urlM[1]}`);
         return make('browser.url', { url: urlM[1] }, raw, 0.97, `Open ${urlM[1]}`);
     }
     const siteM = s.match(SITE_RE);
     if (siteM) {
-        console.log(`[JARVIS_NLP] matched browser.url (site) — ${siteM[1]}`);
+        safeLogger.info(`[JARVIS_NLP] matched browser.url (site) — ${siteM[1]}`);
         return make('browser.url', { site: siteM[1] }, raw, 0.95, `Open ${siteM[1]}`);
     }
     const domainM = s.match(DOMAIN_RE);
     if (domainM) {
-        console.log(`[JARVIS_NLP] matched browser.url (domain) — ${domainM[1]}`);
+        safeLogger.info(`[JARVIS_NLP] matched browser.url (domain) — ${domainM[1]}`);
         return make('browser.url', { url: domainM[1] }, raw, 0.9, `Open ${domainM[1]}`);
     }
     const searchVerbs = /^(?:search|google|search for|look up|bing|find on google|google for)\s+/;
     if (searchVerbs.test(s)) {
         const query = s.replace(searchVerbs, '').replace(/^for\s+/, '').trim();
         if (query.length > 0) {
-            console.log(`[JARVIS_NLP] matched browser.search — "${query}"`);
+            safeLogger.info(`[JARVIS_NLP] matched browser.search — "${query}"`);
             return make('browser.search', { query }, raw, 0.93, `Search "${query}"`);
         }
     }
@@ -433,7 +491,7 @@ function matchContextual(s, raw) {
         s === 'current app' ||
         s === 'active app' ||
         s === 'active window') {
-        console.log('[JARVIS_NLP] matched window.info (contextual — what am I using)');
+        safeLogger.info('[JARVIS_NLP] matched window.info (contextual — what am I using)');
         return make('window.info', {}, raw, 0.97, 'What app am I using?');
     }
     // "close it" / "close this" / "close current app/window"
@@ -442,7 +500,7 @@ function matchContextual(s, raw) {
         s === 'close current window' ||
         s === 'close this' ||
         s === 'close it') {
-        console.log('[JARVIS_NLP] matched app.close (contextual — close active app)');
+        safeLogger.info('[JARVIS_NLP] matched app.close (contextual — close active app)');
         return make('app.close', { contextual: 'active' }, raw, 0.95, 'Close current app');
     }
     // "switch back" / "go back" / "previous app"
@@ -450,7 +508,7 @@ function matchContextual(s, raw) {
         s === 'switch back' ||
         s === 'go back' ||
         s === 'previous app') {
-        console.log('[JARVIS_NLP] matched app.focus (contextual — switch to previous)');
+        safeLogger.info('[JARVIS_NLP] matched app.focus (contextual — switch to previous)');
         return make('app.focus', { contextual: 'previous' }, raw, 0.95, 'Switch to previous app');
     }
     // "reopen it" / "open it again" / "reopen that" / "launch it again"
@@ -458,7 +516,7 @@ function matchContextual(s, raw) {
         s === 'reopen it' ||
         s === 'reopen that' ||
         s === 'open it again') {
-        console.log('[JARVIS_NLP] matched app.open (contextual — reopen last app)');
+        safeLogger.info('[JARVIS_NLP] matched app.open (contextual — reopen last app)');
         return make('app.open', { contextual: 'last' }, raw, 0.92, 'Reopen last app');
     }
     // "minimize it" / "minimize this"
@@ -473,19 +531,168 @@ function matchContextual(s, raw) {
 }
 // ─── Domain: Agent planning ───────────────────────────────────────────────────
 const AGENT_RE = [
-    /^(?:set up|setup|prepare|start)\s+(?:my\s+)?(.+?)\s+(?:setup|environment|workspace|session)$/,
-    /^(?:open everything for|launch everything for|start everything for)\s+(.+)$/,
-    /^my\s+(.+?)\s+(?:work\s+)?setup$/,
+    // "set up my work setup", "prepare my dev environment"
+    /^(?:set up|setup|prepare|start|begin|initialize|init)\s+(?:my\s+)?(.+?)\s+(?:setup|environment|workspace|session|mode|flow)$/,
+    // "open everything for work", "launch everything for my meeting"
+    /^(?:open|launch|start|run)\s+everything\s+(?:for\s+)?(?:my\s+)?(.+)$/,
+    // "my work setup", "my dev workspace"
+    /^my\s+(.+?)\s+(?:work\s+)?(?:setup|workspace|environment|session)$/,
+    // "prepare work setup", "start developer mode"
+    /^(?:prepare|start|begin)\s+(?:my\s+)?(.+?)\s+(?:setup|mode|workflow)$/,
+    // "get my morning apps", "load my work apps"
+    /^(?:get|load|open)\s+(?:all\s+)?(?:my\s+)?(.+?)\s+apps?$/,
+    // natural: "i need to start working", "time to get to work"
+    /^(?:i(?:'m|\s+am)\s+(?:ready\s+)?to\s+(?:start\s+)?|time\s+to\s+get\s+to\s+|let(?:'s|\s+us)\s+(?:get\s+to\s+)?(?:start\s+)?)work(?:ing)?(?:\s+on\s+(.+))?$/,
 ];
 function matchAgent(s, raw) {
     for (const re of AGENT_RE) {
         const m = s.match(re);
         if (m) {
-            console.log(`[JARVIS_NLP] matched agent.plan — goal="${m[1]}"`);
+            safeLogger.info(`[JARVIS_NLP] matched agent.plan — goal="${m[1]}"`);
             return make('agent.plan', { goal: raw }, raw, 0.85, `Plan: ${m[1]}`);
         }
     }
     return null;
+}
+// ─── Heuristic desktop fallback (no Gemini) ─────────────────────────────────
+function matchDesktopHeuristic(s, raw) {
+    const openM = s.match(/^(?:open|launch|start|run)\s+(?:the\s+|my\s+|a\s+)?(.+)$/i);
+    if (openM) {
+        const target = normalizeAppTokens(openM[1].trim());
+        const resolved = resolveAppTarget(target);
+        if (resolved?.appKey || resolved?.discoveryName) {
+            const params = { app: target };
+            if (resolved.appKey)
+                params.appKey = resolved.appKey;
+            if (resolved.discoveryName)
+                params.discoveryName = resolved.discoveryName;
+            safeLogger.info(`[JARVIS_NLP] heuristic app.open — target="${target}"`);
+            return make('app.open', params, raw, 0.72, `Open ${target}`);
+        }
+    }
+    const closeM = s.match(/^(?:close|quit|exit|stop)\s+(?:the\s+|my\s+)?(.+)$/i);
+    if (closeM) {
+        const target = normalizeAppTokens(closeM[1].trim());
+        const resolved = resolveAppTarget(target);
+        if (resolved?.appKey) {
+            const params = { app: target, appKey: resolved.appKey };
+            safeLogger.info(`[JARVIS_NLP] heuristic app.close — target="${target}"`);
+            return make('app.close', params, raw, 0.72, `Close ${target}`);
+        }
+    }
+    const switchM = s.match(/^(?:switch\s+to|go\s+to|focus(?:\s+on)?|activate)\s+(?:the\s+|my\s+)?(.+)$/i);
+    if (switchM) {
+        const target = normalizeAppTokens(switchM[1].trim());
+        const resolved = resolveAppTarget(target);
+        if (resolved?.appKey) {
+            const params = { app: target, appKey: resolved.appKey };
+            safeLogger.info(`[JARVIS_NLP] heuristic app.focus — target="${target}"`);
+            return make('app.focus', params, raw, 0.7, `Focus ${target}`);
+        }
+    }
+    return null;
+}
+// ─── Domain: Keyboard control ─────────────────────────────────────────────────
+const KEY_PRESS_RE = /^(?:press|hit|tap|use|send|trigger|execute)\s+(.+)$/;
+const TYPE_RE = /^(?:type|write|input|enter|type\s+out)\s+(?:the\s+(?:text\s+)?)?[""']?(.+?)[""']?$/;
+/** Common shortcut name aliases so users don't need to know SendKeys syntax. */
+const SHORTCUT_PHRASE_MAP = {
+    'save': 'ctrl+s',
+    'save file': 'ctrl+s',
+    'save it': 'ctrl+s',
+    'save the file': 'ctrl+s',
+    'copy': 'ctrl+c',
+    'copy it': 'ctrl+c',
+    'paste': 'ctrl+v',
+    'paste it': 'ctrl+v',
+    'cut': 'ctrl+x',
+    'cut it': 'ctrl+x',
+    'undo': 'ctrl+z',
+    'undo that': 'ctrl+z',
+    'redo': 'ctrl+y',
+    'redo that': 'ctrl+y',
+    'select all': 'ctrl+a',
+    'find': 'ctrl+f',
+    'search': 'ctrl+f',
+    'open find': 'ctrl+f',
+    'print': 'ctrl+p',
+    'print page': 'ctrl+p',
+    'new tab': 'ctrl+t',
+    'open new tab': 'ctrl+t',
+    'close tab': 'ctrl+w',
+    'close this tab': 'ctrl+w',
+    'reopen tab': 'ctrl+shift+t',
+    'reopen last tab': 'ctrl+shift+t',
+    'refresh': 'f5',
+    'reload': 'f5',
+    'reload page': 'f5',
+    'refresh page': 'f5',
+    'fullscreen': 'f11',
+    'full screen': 'f11',
+    'toggle fullscreen': 'f11',
+    'go back': 'alt+left',
+    'go forward': 'alt+right',
+    'switch windows': 'alt+tab',
+    'switch apps': 'alt+tab',
+    'alt tab': 'alt+tab',
+    'show desktop': 'win+d',
+    'minimize all': 'win+d',
+    'file explorer': 'win+e',
+    'open run': 'win+r',
+    'lock': 'win+l',
+    'lock screen': 'win+l',
+    'lock pc': 'win+l',
+    'lock computer': 'win+l',
+    'enter': 'enter',
+    'press enter': 'enter',
+    'press escape': 'escape',
+    'escape': 'escape',
+};
+function matchKeyboard(s, raw) {
+    // Explicit shortcut phrases
+    const shortcut = SHORTCUT_PHRASE_MAP[s];
+    if (shortcut) {
+        safeLogger.info(`[JARVIS_NLP] matched keyboard.shortcut via alias — "${s}" → "${shortcut}"`);
+        return make('keyboard.shortcut', { key: shortcut }, raw, 0.97, `Press ${shortcut}`);
+    }
+    // "press ctrl+s" / "hit alt+f4" / "tap enter"
+    const pressM = s.match(KEY_PRESS_RE);
+    if (pressM) {
+        const key = pressM[1].trim();
+        // Avoid mis-routing app names like "press chrome" — must look like a key
+        if (/^[a-z0-9+\-_ ]{1,30}$/.test(key) && (/[+]/.test(key) || // modifier combo: ctrl+s
+            SPECIAL_KEY_NAMES.test(key) ||
+            SHORTCUT_PHRASE_MAP[key] !== undefined ||
+            key.length <= 3 // single key like "f5", "tab"
+        )) {
+            const resolved = SHORTCUT_PHRASE_MAP[key] ?? key;
+            safeLogger.info(`[JARVIS_NLP] matched keyboard.shortcut — "${key}"`);
+            return make('keyboard.shortcut', { key: resolved }, raw, 0.93, `Press ${key}`);
+        }
+    }
+    // "type hello" / "write hello world" / "type the text foo"
+    const typeM = s.match(TYPE_RE);
+    if (typeM) {
+        const text = typeM[1].trim();
+        if (text.length >= 1 && text.length <= 500) {
+            safeLogger.info(`[JARVIS_NLP] matched keyboard.type — "${text.slice(0, 40)}"`);
+            return make('keyboard.type', { text }, raw, 0.92, `Type "${text.slice(0, 30)}"`);
+        }
+    }
+    return null;
+}
+const SPECIAL_KEY_NAMES = /^(enter|return|escape|esc|tab|backspace|delete|del|space|up|down|left|right|home|end|f\d{1,2}|pgup|pgdn|insert|ins|pageup|pagedown)$/i;
+function matchIntentChain(s, raw) {
+    return (matchSystem(s, raw)
+        ?? matchKeyboard(s, raw)
+        ?? matchApp(s, raw)
+        ?? matchContextual(s, raw)
+        ?? matchFolderOpen(s, raw)
+        ?? matchBrowser(s, raw)
+        ?? matchFile(s, raw)
+        ?? matchWindowInfo(s, raw)
+        ?? matchAgent(s, raw)
+        ?? matchDesktopHeuristic(s, raw));
 }
 // ─── Main entry point ─────────────────────────────────────────────────────────
 /**
@@ -495,24 +702,35 @@ function matchAgent(s, raw) {
 export function routeIntent(rawInput) {
     if (!rawInput?.trim() || rawInput.trim().length < 2)
         return null;
+    // ── PRIMARY CLASSIFIER (before any app/fuzzy matching) ─────────────────
+    const classified = classifyPrimaryIntent(rawInput);
+    if (classified.primary === 'CHAT' || classified.primary === 'QUESTION') {
+        safeLogger.info(`[JARVIS_NLP] blocked automation — primary=${classified.primary}`);
+        return null;
+    }
+    if (!classified.hasActionVerb && classified.automationScore < 0.5) {
+        safeLogger.info(`[JARVIS_NLP] blocked — no action verb`);
+        return null;
+    }
     const s = normalise(rawInput);
     if (s.length < 2)
         return null;
-    console.log(`[JARVIS_NLP] routing: "${s}"`);
-    const result = matchSystem(s, rawInput) // always highest priority (volume, screenshot …)
-        ?? matchContextual(s, rawInput) // contextual: "close it", "switch back", "what am I using"
-        ?? matchFolderOpen(s, rawInput) // "open downloads/desktop/…"
-        ?? matchBrowser(s, rawInput) // URLs and searches
-        ?? matchApp(s, rawInput) // open/close/focus app — uses alias table
-        ?? matchFile(s, rawInput) // create/delete/move/rename
-        ?? matchWindowInfo(s, rawInput)
-        ?? matchAgent(s, rawInput)
-        ?? null;
+    safeLogger.info(`[JARVIS_NLP] routing: "${s}"`);
+    let result = matchIntentChain(s, rawInput);
+    if (!result) {
+        const peeled = peelToLeadingCommand(s);
+        if (peeled !== s) {
+            result = matchIntentChain(peeled, rawInput);
+        }
+    }
     if (result) {
-        console.log(`[JARVIS_NLP] resolved → type="${result.type}" params=${JSON.stringify(result.params)} risk="${result.riskLevel}"`);
+        safeLogger.info(`[JARVIS_NLP] resolved → type="${result.type}" confidence=${result.confidence} params=${JSON.stringify(result.params)} risk="${result.riskLevel}"`);
+        if (blocksGeminiFallback(result)) {
+            safeLogger.info(`[JARVIS_NLP] confidence≥${DESKTOP_INTENT_CONFIDENCE_FLOOR} — Gemini fallback blocked`);
+        }
     }
     else {
-        console.log(`[JARVIS_NLP] no match — falling through to Gemini`);
+        safeLogger.info('[JARVIS_NLP] no match — may fall through to Gemini for general chat');
     }
     return result;
 }

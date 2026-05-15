@@ -115,7 +115,8 @@ const STATIC_REGISTRY = {
         displayName: 'WhatsApp',
         processNames: ['WhatsApp.Root.exe', 'WhatsApp.exe', 'WhatsAppDesktop.exe'],
         windowTitle: 'WhatsApp',
-        explorerUri: 'shell:AppsFolder\\5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App',
+        // Launched via whatsappLauncher.ts (dynamic AppX family) — avoid stale explorerUri opening File Explorer.
+        openCmd: 'start whatsapp:',
         aliases: ['whatsapp', 'whats app', "what's app", 'whats', 'wa'],
     },
     discord: {

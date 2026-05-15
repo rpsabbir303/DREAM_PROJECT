@@ -22,6 +22,7 @@
  *   import { startDesktopStateEngine, getTrackedWindows, getFocusedWindow }
  *     from './desktopStateEngine.js'
  */
+import { safeLogger } from '../main/safeLogger.js';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { systemEvents } from './systemEvents.js';
@@ -116,7 +117,7 @@ async function runFullSnapshot() {
         const prevFocused = _focused;
         _windows = fresh;
         _focused = fresh.find((w) => w.isFocused) ?? null;
-        console.log(`[JARVIS_STATE] tracking ${fresh.length} windows — focused=${_focused?.processName ?? 'none'}`);
+        safeLogger.info(`[JARVIS_STATE] tracking ${fresh.length} windows — focused=${_focused?.processName ?? 'none'}`);
         // Sync runtimeState active window
         if (_focused) {
             const windowState = _focused.isMinimized ? 'minimized' :
@@ -142,7 +143,7 @@ async function runFullSnapshot() {
                     capturedAt: prevFocused.capturedAt,
                 } : null;
                 systemEvents.emit('focus_changed', { from: fromSnap, to: snap });
-                console.log(`[JARVIS_STATE] focused=${_focused.processName} hwnd=${_focused.hwnd}`);
+                safeLogger.info(`[JARVIS_STATE] focused=${_focused.processName} hwnd=${_focused.hwnd}`);
             }
         }
     }
@@ -218,7 +219,7 @@ export function startDesktopStateEngine() {
     runFullSnapshot().catch(() => undefined);
     _fullTimer = setInterval(runFullSnapshot, FULL_REFRESH_MS);
     _focusTimer = setInterval(runFocusCheck, FOCUS_REFRESH_MS);
-    console.log('[JARVIS_STATE] desktop state engine started');
+    safeLogger.info('[JARVIS_STATE] desktop state engine started');
 }
 /** Stop all pollers (call on app quit). */
 export function stopDesktopStateEngine() {

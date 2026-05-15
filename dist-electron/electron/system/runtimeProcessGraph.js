@@ -16,6 +16,7 @@
  *   startProcessGraph()
  *   const root = findRootPid(somePid)
  */
+import { safeLogger } from '../main/safeLogger.js';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 const execAsync = promisify(exec);
@@ -72,7 +73,7 @@ export function startProcessGraph() {
     // Eager first fetch
     fetchProcessGraph().then((g) => {
         _graph = g;
-        console.log(`[JARVIS_STATE] process graph built — ${g.size} processes`);
+        safeLogger.info(`[JARVIS_STATE] process graph built — ${g.size} processes`);
     }).catch(() => undefined);
     _timer = setInterval(async () => {
         _graph = await fetchProcessGraph();

@@ -85,14 +85,14 @@ export function DashboardPage() {
       className="space-y-5"
     >
       <section className="grid gap-4 xl:grid-cols-3">
-        <GlassPanel glow className="xl:col-span-2">
+        <GlassPanel className="xl:col-span-2">
           <motion.div
             className="mb-5 flex items-center justify-between"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
           >
             <div>
-              <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-amber-400/50">System</p>
+              <p className="jarvis-label">System</p>
               <h3 className="mt-1 text-xl font-medium text-white/95">Status</h3>
             </div>
             <AIOrb size="md" />
@@ -123,8 +123,8 @@ export function DashboardPage() {
         </GlassPanel>
 
         <GlassPanel>
-          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-amber-400/50">Uptime</p>
-          <p className="mt-2 text-3xl font-light tracking-tight text-amber-300">
+          <p className="jarvis-label">Uptime</p>
+          <p className="mt-2 text-3xl font-light tracking-tight text-white/90">
             {snapshot ? formatUptime(snapshot.uptimeSeconds) : dashboard.uptime}
           </p>
           <p className="mt-2 text-sm text-white/45">
@@ -148,11 +148,11 @@ export function DashboardPage() {
               >
                 <motion.div className="mb-1.5 flex items-center justify-between text-sm">
                   <span className="text-white/55">{metric.label}</span>
-                  <span className="font-mono text-[13px] text-amber-200/90">{metric.value}</span>
+                  <span className="font-mono text-[13px] text-white/75">{metric.value}</span>
                 </motion.div>
                 <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
                   <motion.div
-                    className="h-full rounded-full bg-gradient-to-r from-amber-400/90 via-amber-500/80 to-amber-400/75 shadow-[0_0_12px_rgba(200,155,94,0.25)]"
+                    className="h-full rounded-full bg-white/35"
                     initial={{ width: 0 }}
                     animate={{ width: `${metric.progress}%` }}
                     transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}

@@ -392,4 +392,22 @@ export const desktopClient = {
     void _payload
     return { ok: false }
   },
+  async selfTest(): Promise<{
+    passed: number
+    failed: number
+    totalMs: number
+    steps: { name: string; ok: boolean; message: string; ms: number }[]
+    summary: string
+  } | null> {
+    return desktopBridge()?.automation?.selfTest() ?? null
+  },
+  async directExec(type: string, params: Record<string, string> = {}): Promise<{ ok: boolean; message: string }> {
+    return desktopBridge()?.automation?.directExec(type, params) ?? { ok: false, message: 'No desktop bridge' }
+  },
+  async windowSnapshot(): Promise<{
+    source: string
+    windows: { title: string; processName: string; pid: number; hwnd?: number; isFocused?: boolean; isMinimized?: boolean }[]
+  }[]> {
+    return desktopBridge()?.automation?.windowSnapshot() ?? []
+  },
 }

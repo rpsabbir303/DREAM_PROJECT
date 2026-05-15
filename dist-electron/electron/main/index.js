@@ -1,4 +1,7 @@
-import { getDevServerUrl, isDesktopViteDev } from './env.js';
+// Loaded via bootstrap.ts after safeLogger — use safeLogger only (never console.*)
+import { safeLogger } from './safeLogger.js';
+// loadDesktopEnvironment logs via safeLogger; call after bootstrap loads safeLogger
+import { getDevServerUrl, isDesktopViteDev, loadDesktopEnvironment } from './env.js';
 import path from 'node:path';
 import { app, BrowserWindow } from 'electron';
 import { SchedulerService } from '../automation/schedulerService.js';
@@ -16,18 +19,13 @@ let assistantEnvironment = null;
 let isQuitting = false;
 function attachRendererLoadDiagnostics(webContents) {
     webContents.on('dom-ready', () => {
-        console.info('[JARVIS_ELECTRON] renderer dom-ready URL=', webContents.getURL());
+        safeLogger.info('[JARVIS_ELECTRON] renderer dom-ready URL=', webContents.getURL());
     });
     webContents.on('did-finish-load', () => {
-        console.info('[JARVIS_ELECTRON] renderer did-finish-load URL=', webContents.getURL());
+        safeLogger.info('[JARVIS_ELECTRON] renderer did-finish-load URL=', webContents.getURL());
     });
     webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
-        console.error('[JARVIS_ELECTRON] renderer did-fail-load', {
-            errorCode,
-            errorDescription,
-            validatedURL,
-            hint: 'If dev: ensure Vite is on port 5173 (strictPort) and VITE_DEV_SERVER_URL matches.',
-        });
+        safeLogger.error('[JARVIS_ELECTRON] renderer did-fail-load', errorCode, errorDescription, validatedURL);
     });
 }
 function createWindow() {
@@ -43,49 +41,45 @@ function createWindow() {
     mainWindow = win;
     const devUrl = getDevServerUrl();
     if (devUrl) {
-        console.info('[JARVIS_ELECTRON] loadURL (dev)=', devUrl);
+        safeLogger.info('[JARVIS_ELECTRON] loadURL (dev)=', devUrl);
         void win.loadURL(devUrl);
     }
     else {
         const filePath = path.join(app.getAppPath(), 'dist/index.html');
-        console.info('[JARVIS_ELECTRON] loadFile (prod)=', filePath);
+        safeLogger.info('[JARVIS_ELECTRON] loadFile (prod)=', filePath);
         void win.loadFile(filePath);
     }
 }
 /** MVP bootstrap: memory, scheduled workflows, overlay, and core IPC only. */
 app.whenReady().then(() => {
+    loadDesktopEnvironment(); // must run after safeLogger overrides console
     logPreloadDiagnostics();
     const devUrl = getDevServerUrl();
-    console.info('[JARVIS_ELECTRON] NODE_ENV=', process.env.NODE_ENV ?? '(unset)');
-    console.info('[JARVIS_ELECTRON] app.isPackaged=', app.isPackaged);
-    console.info('[JARVIS_ELECTRON] process.env.VITE_DEV_SERVER_URL=', process.env.VITE_DEV_SERVER_URL ?? '(unset)');
-    console.info('[JARVIS_ELECTRON] desktop Vite dev mode=', isDesktopViteDev());
-    console.info('[JARVIS_ELECTRON] resolved dev server URL=', devUrl ?? '(none — will load dist/index.html)');
-    console.info('[JARVIS_ELECTRON] userData=', app.getPath('userData'));
+    safeLogger.info('[JARVIS_ELECTRON] NODE_ENV=', process.env.NODE_ENV ?? '(unset)');
+    safeLogger.info('[JARVIS_ELECTRON] app.isPackaged=', app.isPackaged);
+    safeLogger.info('[JARVIS_ELECTRON] VITE_DEV_SERVER_URL=', process.env.VITE_DEV_SERVER_URL ?? '(unset)');
+    safeLogger.info('[JARVIS_ELECTRON] desktop Vite dev mode=', isDesktopViteDev());
+    safeLogger.info('[JARVIS_ELECTRON] resolved dev server URL=', devUrl ?? '(none)');
+    safeLogger.info('[JARVIS_ELECTRON] userData=', app.getPath('userData'));
     const memoryRepository = createMemoryRepository();
     memoryRepository.createDefaultMemoriesIfNeeded();
     const scheduler = new SchedulerService(memoryRepository);
     assistantEnvironment = new AssistantEnvironment(memoryRepository, () => mainWindow);
-    registerIpcHandlers({
-        memoryRepository,
-        assistantEnvironment,
-    });
+    registerIpcHandlers({ memoryRepository, assistantEnvironment });
     void initializeJarvisGeminiOnStartup();
     scheduler.start();
     createWindow();
     assistantEnvironment.start();
-    // Legacy active-window + running-app poller (kept for runtimeState compat)
     startWindowTracking();
-    // Universal app discovery: scan all installed apps in background
     initDiscovery();
-    // Desktop State Engine: HWND-based live window tracking (window-first arch)
     startDesktopStateEngine();
-    // Process Graph: parent/child relationship tracker (fixes Electron/Steam launchers)
     startProcessGraph();
+}).catch((e) => {
+    safeLogger.error('[JARVIS_ELECTRON] app.whenReady failed:', e instanceof Error ? e.message : String(e));
 });
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
-        // Tray / overlay can keep process alive.
+        // Tray / overlay keeps process alive — do not quit here.
     }
 });
 app.on('activate', () => {
@@ -100,4 +94,11 @@ app.on('before-quit', () => {
     stopDiscovery();
     stopDesktopStateEngine();
     stopProcessGraph();
+});
+// Catch renderer crashes so they don't propagate silently
+app.on('render-process-gone', (_event, _webContents, details) => {
+    safeLogger.warn('[JARVIS_ELECTRON] renderer gone reason=', details.reason, 'exitCode=', details.exitCode);
+});
+app.on('child-process-gone', (_event, details) => {
+    safeLogger.warn('[JARVIS_ELECTRON] child process gone type=', details.type, 'reason=', details.reason);
 });

@@ -1,31 +1,31 @@
 @import "tailwindcss";
 
 @theme {
-  /* Luxury black + gold palette */
-  --color-jarvis-bg: #111111;
-  --color-jarvis-bg-deep: #050505;
-  --color-jarvis-bg-elevated: #161616;
-  --color-jarvis-surface: #0b0b0d;
-  --color-jarvis-panel: rgba(20, 20, 20, 0.65);
+  /* Matte black + minimal accent */
+  --color-jarvis-bg: #121214;
+  --color-jarvis-bg-deep: #070707;
+  --color-jarvis-bg-elevated: #161618;
+  --color-jarvis-surface: #0d0d0f;
+  --color-jarvis-panel: rgba(255, 255, 255, 0.03);
 
-  --color-jarvis-gold: #c89b5e;
-  --color-jarvis-gold-light: #f0c987;
-  --color-jarvis-gold-dim: rgba(200, 155, 94, 0.14);
-  --color-jarvis-gold-glow: rgba(214, 168, 106, 0.32);
-  --color-jarvis-bronze: #8b6a3d;
-  --color-jarvis-champagne: #d6a86a;
+  --color-jarvis-gold: #b8a078;
+  --color-jarvis-gold-light: #e8e4dc;
+  --color-jarvis-gold-dim: rgba(184, 160, 120, 0.08);
+  --color-jarvis-gold-glow: rgba(184, 160, 120, 0.06);
+  --color-jarvis-bronze: #8a8278;
+  --color-jarvis-champagne: #c4b8a4;
 
-  --color-jarvis-fg: #f5f2eb;
-  --color-jarvis-fg-soft: rgba(245, 242, 235, 0.72);
-  --color-jarvis-muted: #9a9080;
+  --color-jarvis-fg: #f4f4f5;
+  --color-jarvis-fg-soft: rgba(244, 244, 245, 0.72);
+  --color-jarvis-muted: #71717a;
 
-  --color-jarvis-border: rgba(200, 155, 94, 0.12);
-  --color-jarvis-border-gold: rgba(240, 201, 135, 0.18);
+  --color-jarvis-border: rgba(255, 255, 255, 0.06);
+  --color-jarvis-border-gold: rgba(255, 255, 255, 0.1);
 
-  --font-jarvis: "Segoe UI Variable", "Segoe UI", Inter, system-ui, sans-serif;
-  --font-jarvis-mono: "Cascadia Code", "SF Mono", Consolas, monospace;
-  --radius-jarvis-lg: 1.25rem;
-  --radius-jarvis-xl: 1.5rem;
+  --font-jarvis: Inter, "SF Pro Display", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --font-jarvis-mono: "Geist Mono", "Cascadia Code", "SF Mono", Consolas, monospace;
+  --radius-jarvis-lg: 1rem;
+  --radius-jarvis-xl: 1.25rem;
 }
 
 :root {
@@ -35,17 +35,17 @@
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(200, 155, 94, 0.28) rgba(255, 255, 255, 0.03);
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
 }
 
 *::-webkit-scrollbar { width: 6px; height: 6px; }
 *::-webkit-scrollbar-track { background: transparent; }
 *::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(214, 168, 106, 0.35), rgba(139, 106, 61, 0.28));
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 999px;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, rgba(240, 201, 135, 0.45), rgba(200, 155, 94, 0.38));
+  background: rgba(255, 255, 255, 0.16);
 }
 
 body {
@@ -59,51 +59,57 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-#root { min-height: 100vh; }
-
-/* ─── Animations (unchanged motion) ───────────────────────────────────────── */
-@keyframes jarvis-ambient-drift {
-  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.75; }
-  33% { transform: translate(1.5%, -1%) scale(1.03); opacity: 1; }
-  66% { transform: translate(-1%, 1.5%) scale(0.98); opacity: 0.85; }
+html,
+body,
+#root {
+  height: 100%;
 }
 
-@keyframes jarvis-breathe {
-  0%, 100% { opacity: 0.4; transform: scale(1); }
-  50% { opacity: 0.72; transform: scale(1.06); }
+#root {
+  min-height: 100vh;
 }
 
-@keyframes jarvis-shimmer {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 0.6; }
+/* ─── Chat layout (fixed dock + scrollable transcript) ───────────────────── */
+.jarvis-chat-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
 }
 
-@keyframes jarvis-dock-glow {
-  0%, 100% {
-    box-shadow:
-      0 0 64px -18px rgba(200, 155, 94, 0.22),
-      0 0 48px -22px rgba(139, 106, 61, 0.14);
-  }
-  50% {
-    box-shadow:
-      0 0 80px -14px rgba(240, 201, 135, 0.32),
-      0 0 56px -18px rgba(200, 155, 94, 0.2);
-  }
+.jarvis-chat-scroll {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
 }
 
-@keyframes jarvis-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
+.jarvis-chat-scroll-inner {
+  --jarvis-chat-dock-offset: 7.25rem;
+  padding-bottom: var(--jarvis-chat-dock-offset);
 }
 
+.jarvis-chat-dock {
+  flex-shrink: 0;
+  z-index: 20;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(7, 7, 7, 0.88);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+/* ─── Animations ──────────────────────────────────────────────────────────── */
 @keyframes jarvis-dot {
   0%, 80%, 100% { opacity: 0.25; transform: scale(0.85); }
   40% { opacity: 1; transform: scale(1); }
 }
 
-@keyframes jarvis-pulse {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 1; }
+@keyframes jarvis-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
 }
 
 @keyframes jarvis-orbit {
@@ -111,27 +117,22 @@ body {
   100% { transform: rotate(360deg); }
 }
 
-.jarvis-ambient-layer { animation: jarvis-ambient-drift 18s ease-in-out infinite; }
-.jarvis-breathe { animation: jarvis-breathe 4s ease-in-out infinite; }
-.jarvis-shimmer { animation: jarvis-shimmer 3s ease-in-out infinite; }
-.jarvis-float { animation: jarvis-float 5s ease-in-out infinite; }
-.jarvis-pulse { animation: jarvis-pulse 2.8s ease-in-out infinite; }
+.jarvis-float { animation: jarvis-float 6s ease-in-out infinite; }
 .jarvis-typing-dot { animation: jarvis-dot 1.2s ease-in-out infinite; }
 .jarvis-typing-dot:nth-child(2) { animation-delay: 0.15s; }
 .jarvis-typing-dot:nth-child(3) { animation-delay: 0.3s; }
 
-/* ─── Cinematic black + gold background ───────────────────────────────────── */
+/* ─── Matte background ────────────────────────────────────────────────────── */
 .jarvis-bg {
   position: relative;
   isolation: isolate;
   background-color: var(--color-jarvis-bg-deep);
-  background-image:
-    radial-gradient(ellipse 90% 55% at 50% -18%, rgba(200, 155, 94, 0.14), transparent 58%),
-    radial-gradient(ellipse 65% 48% at 100% 5%, rgba(214, 168, 106, 0.1), transparent 52%),
-    radial-gradient(ellipse 55% 45% at 0% 95%, rgba(139, 106, 61, 0.08), transparent 48%),
-    radial-gradient(ellipse 50% 42% at 88% 92%, rgba(240, 201, 135, 0.07), transparent 45%),
-    radial-gradient(ellipse 38% 32% at 12% 42%, rgba(200, 155, 94, 0.06), transparent 42%),
-    linear-gradient(168deg, #161616 0%, #0b0b0d 40%, #111111 72%, #050505 100%);
+  background-image: linear-gradient(
+    180deg,
+    #0d0d0f 0%,
+    #070707 38%,
+    #121214 100%
+  );
 }
 
 .jarvis-bg::before {
@@ -141,19 +142,8 @@ body {
   inset: 0;
   z-index: 0;
   background:
-    radial-gradient(ellipse 50% 48% at 50% 40%, rgba(200, 155, 94, 0.08) 0%, transparent 62%),
-    radial-gradient(ellipse 85% 72% at 50% 50%, transparent 26%, rgba(2, 2, 4, 0.7) 100%),
-    radial-gradient(ellipse 100% 100% at 50% 50%, transparent 38%, rgba(0, 0, 0, 0.88) 100%);
-}
-
-.jarvis-bg::after {
-  content: "";
-  pointer-events: none;
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  opacity: 0.035;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    radial-gradient(ellipse 70% 50% at 50% 0%, rgba(255, 255, 255, 0.02) 0%, transparent 55%),
+    radial-gradient(ellipse 100% 100% at 50% 50%, transparent 42%, rgba(0, 0, 0, 0.55) 100%);
 }
 
 .jarvis-center-spotlight {
@@ -162,97 +152,52 @@ body {
   left: 50%;
   top: 42%;
   z-index: 0;
-  width: min(720px, 92%);
-  height: min(480px, 70%);
+  width: min(640px, 88%);
+  height: min(400px, 60%);
   transform: translate(-50%, -50%);
   background: radial-gradient(
-    ellipse 55% 50% at 50% 50%,
-    rgba(240, 201, 135, 0.14) 0%,
-    rgba(200, 155, 94, 0.08) 40%,
-    transparent 70%
+    ellipse 50% 45% at 50% 50%,
+    rgba(255, 255, 255, 0.03) 0%,
+    transparent 72%
   );
-  filter: blur(2px);
-  animation: jarvis-breathe 6s ease-in-out infinite;
 }
 
+/* ─── Glass surfaces ──────────────────────────────────────────────────────── */
 .jarvis-hero-panel {
   position: relative;
   z-index: 1;
-  border-radius: 1.75rem;
-  border: 1px solid rgba(200, 155, 94, 0.14);
-  background: linear-gradient(
-    165deg,
-    rgba(30, 30, 30, 0.65) 0%,
-    rgba(20, 20, 20, 0.55) 45%,
-    rgba(22, 22, 22, 0.48) 100%
-  );
+  border-radius: var(--radius-jarvis-xl);
+  border: 1px solid var(--color-jarvis-border);
+  background: rgba(255, 255, 255, 0.03);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    inset 0 -24px 48px rgba(0, 0, 0, 0.35),
-    inset 0 0 48px rgba(200, 155, 94, 0.04),
-    0 24px 64px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(0, 0, 0, 0.25),
-    0 0 80px -24px rgba(200, 155, 94, 0.18),
-    0 0 64px -28px rgba(240, 201, 135, 0.1);
-  backdrop-filter: blur(32px) saturate(1.2);
-}
-
-.jarvis-hero-panel::before {
-  content: "";
-  position: absolute;
-  inset: -1px;
-  z-index: -1;
-  border-radius: inherit;
-  background: linear-gradient(
-    135deg,
-    rgba(240, 201, 135, 0.2) 0%,
-    transparent 42%,
-    rgba(200, 155, 94, 0.15) 100%
-  );
-  opacity: 0.55;
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  padding: 1px;
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 2px 10px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 
 .jarvis-glass {
-  background: linear-gradient(
-    158deg,
-    rgba(30, 30, 30, 0.65) 0%,
-    rgba(20, 20, 20, 0.55) 50%,
-    rgba(24, 24, 24, 0.5) 100%
-  );
-  border: 1px solid rgba(200, 155, 94, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.07),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.22),
-    inset 0 12px 40px rgba(200, 155, 94, 0.03),
-    0 12px 40px rgba(0, 0, 0, 0.45),
-    0 0 0 1px rgba(0, 0, 0, 0.2);
-  backdrop-filter: blur(28px) saturate(1.15);
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 1px 8px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 
 .jarvis-glow-border {
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.07),
-    0 0 0 1px rgba(200, 155, 94, 0.14),
-    0 0 48px -14px rgba(200, 155, 94, 0.16),
-    0 0 56px -18px rgba(240, 201, 135, 0.1);
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 1px 8px rgba(0, 0, 0, 0.08);
 }
 
 .jarvis-sidebar {
-  background: linear-gradient(
-    180deg,
-    rgba(8, 8, 8, 0.97) 0%,
-    rgba(5, 5, 5, 0.95) 50%,
-    rgba(7, 7, 7, 0.96) 100%
-  );
-  border-right: 1px solid rgba(200, 155, 94, 0.08);
-  box-shadow:
-    inset -1px 0 0 rgba(240, 201, 135, 0.08),
-    inset 1px 0 0 rgba(200, 155, 94, 0.04),
-    8px 0 40px rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(24px) saturate(1.1);
+  background: rgba(7, 7, 7, 0.72);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 
 .jarvis-sidebar-edge {
@@ -265,12 +210,9 @@ body {
   background: linear-gradient(
     180deg,
     transparent 0%,
-    rgba(200, 155, 94, 0.2) 20%,
-    rgba(240, 201, 135, 0.28) 50%,
-    rgba(214, 168, 106, 0.22) 80%,
+    rgba(255, 255, 255, 0.06) 50%,
     transparent 100%
   );
-  opacity: 0.75;
 }
 
 .jarvis-chat-canvas { position: relative; }
@@ -281,185 +223,269 @@ body {
   position: absolute;
   inset: 0;
   z-index: 0;
-  background:
-    radial-gradient(ellipse 50% 45% at 50% 38%, rgba(240, 201, 135, 0.1) 0%, transparent 65%),
-    radial-gradient(ellipse 42% 38% at 50% 42%, rgba(200, 155, 94, 0.06) 0%, transparent 60%);
+  background: radial-gradient(
+    ellipse 45% 40% at 50% 40%,
+    rgba(255, 255, 255, 0.02) 0%,
+    transparent 65%
+  );
 }
 
-.jarvis-dock-wrap { position: relative; }
+.jarvis-dock-wrap {
+  position: relative;
+  background: transparent;
+}
 
 .jarvis-dock-glow {
-  position: absolute;
-  inset: -12px -8px -16px;
-  z-index: 0;
-  border-radius: 1.75rem;
-  background: radial-gradient(
-    ellipse 80% 60% at 50% 100%,
-    rgba(200, 155, 94, 0.2) 0%,
-    rgba(139, 106, 61, 0.1) 45%,
-    transparent 70%
-  );
-  filter: blur(16px);
-  animation: jarvis-dock-glow 4s ease-in-out infinite;
-  pointer-events: none;
+  display: none;
 }
 
 .jarvis-dock {
   position: relative;
   z-index: 1;
-  background: linear-gradient(
-    152deg,
-    rgba(30, 30, 30, 0.72) 0%,
-    rgba(20, 20, 20, 0.68) 48%,
-    rgba(22, 22, 22, 0.65) 100%
-  );
-  border: 1px solid rgba(200, 155, 94, 0.16);
+  background: rgba(18, 18, 18, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   box-shadow:
-    inset 0 2px 0 rgba(255, 255, 255, 0.09),
-    inset 0 -8px 28px rgba(0, 0, 0, 0.35),
-    inset 0 0 36px rgba(139, 106, 61, 0.08),
-    0 16px 48px rgba(0, 0, 0, 0.52),
-    0 0 0 1px rgba(240, 201, 135, 0.06),
-    0 0 64px -18px rgba(200, 155, 94, 0.2),
-    0 0 48px -22px rgba(214, 168, 106, 0.12);
-  backdrop-filter: blur(32px) saturate(1.2);
-  transition: box-shadow 0.45s ease, transform 0.35s ease, border-color 0.35s ease;
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 2px 12px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
 }
 
 .jarvis-dock:focus-within {
-  border-color: rgba(240, 201, 135, 0.32);
+  border-color: rgba(255, 255, 255, 0.08);
   box-shadow:
-    inset 0 2px 0 rgba(255, 255, 255, 0.11),
-    inset 0 0 44px rgba(200, 155, 94, 0.1),
-    0 0 0 1px rgba(240, 201, 135, 0.22),
-    0 20px 56px rgba(0, 0, 0, 0.58),
-    0 0 80px -12px rgba(240, 201, 135, 0.22),
-    0 0 56px -16px rgba(200, 155, 94, 0.16);
-  transform: translateY(-2px);
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 3px 14px rgba(0, 0, 0, 0.14);
+  transform: translateY(-1px);
 }
 
 .jarvis-btn-glass {
-  border: 1px solid rgba(200, 155, 94, 0.12);
-  background: linear-gradient(
-    150deg,
-    rgba(255, 255, 255, 0.08) 0%,
-    rgba(30, 30, 30, 0.35) 100%
-  );
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.07),
-    inset 0 -2px 8px rgba(0, 0, 0, 0.2),
-    0 4px 12px rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   transition:
-    border-color 0.3s ease,
-    background 0.3s ease,
-    box-shadow 0.3s ease,
-    color 0.2s ease,
-    transform 0.25s ease;
+    border-color 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
 }
 
 .jarvis-btn-glass:hover:not(:disabled) {
-  border-color: rgba(240, 201, 135, 0.35);
-  background: linear-gradient(
-    150deg,
-    rgba(200, 155, 94, 0.14) 0%,
-    rgba(139, 106, 61, 0.08) 100%
-  );
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 0 24px -4px rgba(240, 201, 135, 0.28),
-    0 0 20px -6px rgba(200, 155, 94, 0.18),
-    0 6px 16px rgba(0, 0, 0, 0.32);
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.88);
 }
 
 .jarvis-btn-glass-active {
-  border-color: rgba(240, 201, 135, 0.45);
-  background: linear-gradient(
-    150deg,
-    rgba(200, 155, 94, 0.22) 0%,
-    rgba(214, 168, 106, 0.12) 100%
-  );
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    0 0 28px -4px rgba(240, 201, 135, 0.32),
-    0 0 24px -8px rgba(200, 155, 94, 0.2);
+  border-color: rgba(184, 160, 120, 0.28);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-jarvis-gold-light);
 }
 
+/* ─── Chat messages (presentation only) ───────────────────────────────────── */
+
 .jarvis-msg-user {
-  border: 1px solid rgba(200, 155, 94, 0.1);
-  background: linear-gradient(
-    140deg,
-    rgba(40, 38, 34, 0.55) 0%,
-    rgba(24, 24, 24, 0.45) 100%
-  );
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.04);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 10px 28px rgba(0, 0, 0, 0.35),
-    0 0 32px -14px rgba(200, 155, 94, 0.08);
+    0 1px 3px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-radius: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.jarvis-msg-user::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.05) 0%,
+    transparent 42%
+  );
+}
+
+.jarvis-msg-user:hover {
+  border-color: rgba(255, 255, 255, 0.07);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 2px 8px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
 }
 
 .jarvis-msg-assistant {
-  border: 1px solid rgba(200, 155, 94, 0.14);
-  background: linear-gradient(
-    148deg,
-    rgba(28, 28, 28, 0.72) 0%,
-    rgba(18, 18, 18, 0.68) 55%,
-    rgba(22, 22, 22, 0.65) 100%
-  );
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.025);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    inset 0 0 40px rgba(200, 155, 94, 0.04),
-    0 14px 44px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(240, 201, 135, 0.05),
-    0 0 56px -18px rgba(200, 155, 94, 0.12);
+    inset 0 -1px 0 rgba(0, 0, 0, 0.12),
+    0 2px 8px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.jarvis-msg-assistant::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.035) 0%,
+    transparent 38%
+  );
+}
+
+.jarvis-msg-assistant::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0.75rem;
+  right: 0.75rem;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.06) 20%,
+    rgba(255, 255, 255, 0.06) 80%,
+    transparent
+  );
+}
+
+.jarvis-msg-assistant-header {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem 0.375rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.jarvis-msg-assistant-body {
+  position: relative;
+  z-index: 1;
+  padding: 0.375rem 0.75rem 0.5rem;
+}
+
+.jarvis-msg-assistant-name {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.jarvis-msg-assistant-time {
+  margin-left: auto;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.28);
+}
+
+.jarvis-msg-mark {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.jarvis-msg-mark-core {
+  width: 0.3125rem;
+  height: 0.3125rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.jarvis-msg-typing-panel {
+  position: relative;
+  z-index: 1;
+  padding: 0.375rem 0.75rem 0.5rem;
+}
+
+.jarvis-msg-typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0;
 }
 
 .jarvis-core-ring {
   position: absolute;
-  inset: -12px;
+  inset: -10px;
   border-radius: 50%;
-  border: 1px solid rgba(214, 168, 106, 0.2);
-  animation: jarvis-orbit 20s linear infinite;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  animation: jarvis-orbit 24s linear infinite;
 }
 
 .jarvis-core-ring-outer {
-  inset: -22px;
-  border-color: rgba(240, 201, 135, 0.12);
-  animation-duration: 28s;
+  inset: -18px;
+  border-color: rgba(255, 255, 255, 0.04);
+  animation-duration: 32s;
   animation-direction: reverse;
 }
 
 .jarvis-particle {
   position: absolute;
   border-radius: 50%;
-  background: rgba(240, 201, 135, 0.55);
-  box-shadow: 0 0 8px rgba(240, 201, 135, 0.45);
-  animation: jarvis-shimmer 4s ease-in-out infinite;
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .jarvis-particle--gold {
-  background: rgba(200, 155, 94, 0.5);
-  box-shadow: 0 0 8px rgba(200, 155, 94, 0.4);
+  background: rgba(255, 255, 255, 0.18);
 }
 
 .jarvis-heading {
   font-weight: 600;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.02em;
   color: var(--color-jarvis-fg);
-  text-shadow: 0 1px 28px rgba(200, 155, 94, 0.12);
 }
 
 .jarvis-label {
   font-size: 0.6875rem;
   font-weight: 500;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: rgba(214, 168, 106, 0.65);
+  color: var(--color-jarvis-muted);
 }
 
 .jarvis-subtext {
   font-size: 0.875rem;
-  line-height: 1.65;
-  color: rgba(245, 242, 235, 0.4);
+  line-height: 1.6;
+  color: rgba(244, 244, 245, 0.45);
   letter-spacing: 0.01em;
 }
 

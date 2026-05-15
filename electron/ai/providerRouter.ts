@@ -20,14 +20,18 @@ export async function getProviderModels(_settings: AiProviderSettings) {
  * Jarvis desktop MVP: Google Gemini only (see `GEMINI_API_KEY`, `GEMINI_MODEL`).
  */
 export function routeProvider(_input: string, _settings: AiProviderSettings): AiRoutingDecision {
+  const model = resolveGeminiModel()
   if (!canUseConfiguredGemini()) {
-    throw new Error(
-      'GEMINI_API_KEY is missing or invalid. Add a real key from Google AI Studio to the project root `.env` (https://aistudio.google.com/apikey).',
-    )
+    return {
+      provider: 'gemini',
+      model,
+      reason: 'AI provider unavailable — desktop automation still works.',
+      isOffline: true,
+    }
   }
   return {
     provider: 'gemini',
-    model: resolveGeminiModel(),
+    model,
     reason: 'Jarvis uses Google Gemini only.',
     isOffline: false,
   }

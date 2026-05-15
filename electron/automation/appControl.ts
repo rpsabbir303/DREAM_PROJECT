@@ -14,6 +14,7 @@
  * Future: file ops, browser automation, workflows — keep entry points here.
  */
 
+import { safeLogger } from '../main/safeLogger.js'
 import { exec, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 
@@ -119,7 +120,7 @@ async function detectRunningProcess(app: AppDefinition): Promise<string | null> 
   for (const name of app.processNames) {
     const running = await isProcessRunning(name)
     if (running) {
-      console.log('[JARVIS_AUTOMATION] detected process', name)
+      safeLogger.info('[JARVIS_AUTOMATION] detected process', name)
       return name
     }
   }
@@ -144,7 +145,7 @@ async function detectByWindowTitle(title: string): Promise<string | null> {
     )
     const found = stdout.trim()
     if (found) {
-      console.log('[JARVIS_AUTOMATION] detected process via window title', found)
+      safeLogger.info('[JARVIS_AUTOMATION] detected process via window title', found)
       return `${found}.exe`
     }
     return null
@@ -199,15 +200,15 @@ export async function openApplication(appName: DesktopAppKey): Promise<{ ok: boo
 
   // UWP / Store app (explorer.exe, no cmd.exe)
   if (def.explorerUri) {
-    console.log('[JARVIS_AUTOMATION] launching', appName, '(explorer)')
-    console.log('[JARVIS_AUTOMATION] command', `explorer.exe ${def.explorerUri}`)
+    safeLogger.info('[JARVIS_AUTOMATION] launching', appName, '(explorer)')
+    safeLogger.info('[JARVIS_AUTOMATION] command', `explorer.exe ${def.explorerUri}`)
     try {
       await spawnExplorer(def.explorerUri)
-      console.log('[JARVIS_AUTOMATION] launched', appName)
+      safeLogger.info('[JARVIS_AUTOMATION] launched', appName)
       return { ok: true, message: `Opening ${label}.` }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      console.error('[JARVIS_AUTOMATION] failed', appName, msg)
+      safeLogger.error('[JARVIS_AUTOMATION] failed', appName, msg)
       return { ok: false, message: `I couldn't open ${label}. ${redactPaths(msg)}` }
     }
   }
@@ -215,15 +216,15 @@ export async function openApplication(appName: DesktopAppKey): Promise<{ ok: boo
   // Standard app via cmd /c start
   if (def.openCmd) {
     const fullCmd = `cmd /c ${def.openCmd}`
-    console.log('[JARVIS_AUTOMATION] launching', appName)
-    console.log('[JARVIS_AUTOMATION] command', fullCmd)
+    safeLogger.info('[JARVIS_AUTOMATION] launching', appName)
+    safeLogger.info('[JARVIS_AUTOMATION] command', fullCmd)
     try {
       await execAsync(fullCmd, { windowsHide: true, timeout: 10_000 })
-      console.log('[JARVIS_AUTOMATION] launched', appName)
+      safeLogger.info('[JARVIS_AUTOMATION] launched', appName)
       return { ok: true, message: `Opening ${label}.` }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      console.error('[JARVIS_AUTOMATION] failed', appName, msg)
+      safeLogger.error('[JARVIS_AUTOMATION] failed', appName, msg)
       return { ok: false, message: `I couldn't open ${label}. ${redactPaths(msg)}` }
     }
   }
@@ -253,14 +254,14 @@ export async function closeApplication(appName: DesktopAppKey): Promise<{ ok: bo
 
   // Step 3 — nothing found
   if (!targetExe) {
-    console.log('[JARVIS_AUTOMATION] process not found', appName)
+    safeLogger.info('[JARVIS_AUTOMATION] process not found', appName)
     return { ok: true, message: `${label} is not running.` }
   }
 
   // Step 4 — kill the detected process
   const killCmd = `cmd /c taskkill /F /IM ${targetExe}`
-  console.log('[JARVIS_AUTOMATION] closing process', targetExe, 'for', appName)
-  console.log('[JARVIS_AUTOMATION] command', killCmd)
+  safeLogger.info('[JARVIS_AUTOMATION] closing process', targetExe, 'for', appName)
+  safeLogger.info('[JARVIS_AUTOMATION] command', killCmd)
 
   try {
     const { stdout, stderr } = await execAsync(killCmd, { windowsHide: true, timeout: 10_000 })
@@ -268,12 +269,12 @@ export async function closeApplication(appName: DesktopAppKey): Promise<{ ok: bo
     if (out.includes('not found') || out.includes('could not find') || out.includes('no tasks')) {
       return { ok: true, message: `${label} is not running.` }
     }
-    console.log('[JARVIS_AUTOMATION] closed', appName)
+    safeLogger.info('[JARVIS_AUTOMATION] closed', appName)
     return { ok: true, message: `Closing ${label}.` }
   } catch (e) {
     const raw = e instanceof Error ? e.message : String(e)
     const low = raw.toLowerCase()
-    console.error('[JARVIS_AUTOMATION] failed', appName, raw)
+    safeLogger.error('[JARVIS_AUTOMATION] failed', appName, raw)
     if (low.includes('not found') || low.includes('not running') || low.includes('no tasks')) {
       return { ok: true, message: `${label} is not running.` }
     }
@@ -310,7 +311,7 @@ export async function tryRunDesktopAutomationFromUserText(text: string): Promise
   // Compound intent ("close X and Y")
   const multi = parseMultiIntent(text)
   if (multi) {
-    console.log('[JARVIS_AUTOMATION] compound intent matched', multi)
+    safeLogger.info('[JARVIS_AUTOMATION] compound intent matched', multi)
     const messages = await Promise.all(multi.map(executeSingleIntent))
     return { handled: true, message: messages.join(' ') }
   }
@@ -321,7 +322,7 @@ export async function tryRunDesktopAutomationFromUserText(text: string): Promise
     return { handled: false }
   }
 
-  console.log('[JARVIS_AUTOMATION] intent matched', single)
+  safeLogger.info('[JARVIS_AUTOMATION] intent matched', single)
   const message = await executeSingleIntent(single)
   return { handled: true, message }
 }

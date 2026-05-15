@@ -1,3 +1,4 @@
+import { safeLogger } from '../main/safeLogger.js';
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import { IPC_CHANNELS } from '../../shared/constants/ipcChannels.js';
@@ -137,7 +138,7 @@ export function registerIpcHandlers({ memoryRepository, assistantEnvironment, })
                 : undefined;
             const msg = parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ') ||
                 parsed.error.message;
-            console.warn('[JARVIS_AI] aiChatStartStream validation failed:', msg, payload);
+            safeLogger.warn('[JARVIS_AI] aiChatStartStream validation failed:', msg, payload);
             if (sid && !event.sender.isDestroyed()) {
                 event.sender.send(IPC_CHANNELS.aiChatStreamEvent, {
                     streamId: sid,
@@ -147,7 +148,7 @@ export function registerIpcHandlers({ memoryRepository, assistantEnvironment, })
             }
             throw parsed.error;
         }
-        console.info('[JARVIS_IPC] aiChatStartStream accepted', parsed.data.streamId, 'len=', parsed.data.input.length);
+        safeLogger.info('[JARVIS_IPC] aiChatStartStream accepted', parsed.data.streamId, 'len=', parsed.data.input.length);
         await chatEngine.startStream(parsed.data, event.sender);
         return { accepted: true };
     });
@@ -155,7 +156,7 @@ export function registerIpcHandlers({ memoryRepository, assistantEnvironment, })
         return { cancelled: chatEngine.cancelStream(streamId) };
     });
     ipcMain.handle(IPC_CHANNELS.voiceTranscribe, async () => {
-        console.warn('[JARVIS_VOICE] voiceTranscribe IPC disabled — text chat MVP (no Whisper)');
+        safeLogger.warn('[JARVIS_VOICE] voiceTranscribe IPC disabled — text chat MVP (no Whisper)');
         return { text: '', durationMs: 0 };
     });
     ipcMain.handle(IPC_CHANNELS.screenCapture, async (_event, source) => {
@@ -180,5 +181,147 @@ export function registerIpcHandlers({ memoryRepository, assistantEnvironment, })
     });
     ipcMain.handle(IPC_CHANNELS.desktopAgentActiveWindow, async () => {
         return getActiveWindow();
+    });
+    // ── Automation Self-Test ──────────────────────────────────────────────────
+    ipcMain.handle(IPC_CHANNELS.automationSelfTest, async () => {
+        const { runAutomationSelfTest } = await import('../system/automationSelfTest.js');
+        return runAutomationSelfTest();
+    });
+    // ── Direct Execution Bypass (dev/debug) ───────────────────────────────────
+    // Calls executeIntent directly — bypasses NLP entirely.
+    // Payload: { type, params }  where type is an NlpIntentType
+    ipcMain.handle(IPC_CHANNELS.automationDirectExec, async (_event, payload) => {
+        safeLogger.info(`[JARVIS_DIRECT] direct-exec type=${payload.type} params=${JSON.stringify(payload.params)}`);
+        const { executeIntent } = await import('../plugins/pluginRegistry.js');
+        try {
+            const result = await executeIntent({
+                type: payload.type,
+                params: payload.params,
+                rawInput: `[direct:${payload.type}]`,
+                displayLabel: `Direct: ${payload.type}`,
+                confidence: 1.0,
+                riskLevel: 'low',
+            });
+            safeLogger.info(`[JARVIS_DIRECT] result ok=${result.ok} message="${result.message}"`);
+            return result;
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            safeLogger.error(`[JARVIS_DIRECT] threw: ${msg}`);
+            return { ok: false, message: `Threw: ${msg.slice(0, 300)}` };
+        }
+    });
+    // ── AI Health ─────────────────────────────────────────────────────────────
+    ipcMain.handle(IPC_CHANNELS.aiHealthStatus, async () => {
+        const { getAIStatus } = await import('../ai/aiHealthService.js');
+        return getAIStatus();
+    });
+    ipcMain.handle(IPC_CHANNELS.aiHealthPing, async () => {
+        const { pingProvider } = await import('../ai/aiHealthService.js');
+        return pingProvider();
+    });
+    ipcMain.handle(IPC_CHANNELS.aiSetApiKey, async (_event, key) => {
+        if (!key || typeof key !== 'string' || key.trim().length < 12) {
+            return { ok: false, message: 'Invalid API key format.' };
+        }
+        // Write key into .env at runtime so next restart picks it up,
+        // AND inject into process.env immediately so current session works.
+        const trimmed = key.trim();
+        process.env.GEMINI_API_KEY = trimmed;
+        // Also persist to .env file (project root in dev and packaged app path)
+        try {
+            const { readFileSync, writeFileSync, existsSync } = await import('node:fs');
+            const { join, resolve, dirname } = await import('node:path');
+            const { app } = await import('electron');
+            const { fileURLToPath } = await import('node:url');
+            const ipcDir = dirname(fileURLToPath(import.meta.url));
+            const projectEnv = resolve(ipcDir, '../../..', '.env');
+            const envPath = existsSync(projectEnv) ? projectEnv : join(app.getAppPath(), '.env');
+            let content = '';
+            try {
+                content = readFileSync(envPath, 'utf-8');
+            }
+            catch { /* file may not exist yet */ }
+            if (content.includes('GEMINI_API_KEY=')) {
+                content = content.replace(/^GEMINI_API_KEY=.*/m, `GEMINI_API_KEY=${trimmed}`);
+            }
+            else {
+                content = content.trimEnd() + `\nGEMINI_API_KEY=${trimmed}\n`;
+            }
+            writeFileSync(envPath, content, 'utf-8');
+            const { reloadDesktopEnvironment } = await import('../main/env.js');
+            reloadDesktopEnvironment();
+        }
+        catch (e) {
+            safeLogger.warn('[JARVIS_IPC] aiSetApiKey: could not persist to .env:', e instanceof Error ? e.message : String(e));
+        }
+        // Kick off a live ping to confirm it works
+        const { pingProvider } = await import('../ai/aiHealthService.js');
+        const status = await pingProvider();
+        return { ok: status.status === 'online', status };
+    });
+    // ── Live Window Snapshot + App Dump ─────────────────────────────────────
+    ipcMain.handle(IPC_CHANNELS.automationWindowSnapshot, async () => {
+        const results = [];
+        // Source 1: DesktopStateEngine cache
+        try {
+            const { getTrackedWindows } = await import('../system/desktopStateEngine.js');
+            const cached = getTrackedWindows();
+            results.push({
+                source: 'DesktopStateEngine (cache)',
+                windows: cached.map((w) => ({
+                    title: w.title,
+                    processName: w.processName,
+                    pid: w.pid,
+                    hwnd: w.hwnd,
+                    isFocused: w.isFocused,
+                    isMinimized: w.isMinimized,
+                })),
+            });
+        }
+        catch (e) {
+            results.push({ source: 'DesktopStateEngine (FAILED)', windows: [] });
+            safeLogger.error('[JARVIS_SNAPSHOT] DSE error:', e);
+        }
+        // Source 2: Live PowerShell query
+        try {
+            const { exec } = await import('node:child_process');
+            const { promisify } = await import('node:util');
+            const execAsync = promisify(exec);
+            const ps = `Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -ne '' } | ForEach-Object { Write-Output "$($_.MainWindowHandle.ToInt64())|$($_.Id)|$($_.ProcessName)|$($_.MainWindowTitle)" }`;
+            const { stdout } = await execAsync(`powershell -NoProfile -NonInteractive -Command "${ps.replace(/"/g, '\\"')}"`, { windowsHide: true, timeout: 12_000 });
+            const psWindows = stdout.trim().split('\n').filter(Boolean).map((line) => {
+                const parts = line.trim().split('|');
+                return {
+                    title: parts.slice(3).join('|').trim(),
+                    processName: parts[2]?.trim() ?? '',
+                    pid: Number(parts[1]),
+                    hwnd: Number(parts[0]),
+                };
+            });
+            results.push({ source: 'Live PowerShell Get-Process', windows: psWindows });
+        }
+        catch (e) {
+            results.push({ source: 'Live PowerShell (FAILED)', windows: [] });
+            safeLogger.error('[JARVIS_SNAPSHOT] PS error:', e);
+        }
+        // Source 3: Discovery registry dump
+        try {
+            const { dumpDiscoveredApps, getDiscoveryCount, isDiscoveryReady } = await import('../system/appDiscovery.js');
+            const dump = dumpDiscoveredApps(100);
+            results.push({
+                source: `Discovery Registry (ready=${isDiscoveryReady()}, total=${getDiscoveryCount()})`,
+                windows: dump.map((a) => ({
+                    title: a.name,
+                    processName: a.processName ?? '(uwp/unknown)',
+                    pid: 0,
+                    hwnd: undefined,
+                })),
+            });
+        }
+        catch (e) {
+            results.push({ source: `Discovery Registry (FAILED: ${e})`, windows: [] });
+        }
+        return results;
     });
 }

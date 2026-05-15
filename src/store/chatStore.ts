@@ -78,6 +78,23 @@ interface ToolStep {
   ok: boolean
 }
 
+export interface AutomationDebugInfo {
+  /** Raw user input */
+  input: string
+  /** Intent type resolved by NLP router */
+  intentType: string
+  /** Parsed params (app, key, text, etc.) */
+  intentParams: Record<string, unknown>
+  /** Whether execution succeeded */
+  ok: boolean
+  /** What the execution layer returned */
+  message: string
+  /** Raw output string from execution layer */
+  output?: string
+  /** Timestamp */
+  at: string
+}
+
 interface ChatStore {
   messages: ChatMessage[]
   tasks: AssistantTask[]
@@ -87,6 +104,8 @@ interface ChatStore {
   recentToolSteps: ToolStep[]
   /** Last desktop execution result (for compact feedback under the transcript). */
   lastExecution: ExecutionResult | null
+  /** Debug info populated from the execution event — shown in DebugPanel. */
+  lastDebugInfo: AutomationDebugInfo | null
   inputValue: string
   isStreaming: boolean
   isThinking: boolean
@@ -102,6 +121,20 @@ function nowIso() {
   return new Date().toISOString()
 }
 
+/** User-safe error text — never expose API keys or stack traces in the UI. */
+function sanitizeChatError(raw: string): string {
+  if (/GEMINI_API_KEY|api\s*key|aistudio|google ai studio|generativeai/i.test(raw)) {
+    return 'AI provider unavailable'
+  }
+  if (/\n\s*at\s+|\bstack\b|\.ts:\d+|\.js:\d+/i.test(raw)) {
+    return 'Something went wrong'
+  }
+  if (raw.length > 120) {
+    return 'Something went wrong'
+  }
+  return raw
+}
+
 export const useChatStore = create<ChatStore>((set, get) => ({
   messages: [],
   tasks: [],
@@ -109,6 +142,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   providerDecision: null,
   recentToolSteps: [],
   lastExecution: null,
+  lastDebugInfo: null,
   inputValue: '',
   isStreaming: false,
   isThinking: false,
@@ -178,16 +212,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
       console.info('[JARVIS_UI] startChatStream accepted; awaiting stream events', streamId)
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Chat request failed.'
+      const message = sanitizeChatError(error instanceof Error ? error.message : 'Chat request failed.')
       resetDeltaBuffer()
       set((state) => {
         const messages = [...state.messages]
         const last = messages[messages.length - 1]
-        if (last?.role === 'assistant') {
-          messages[messages.length - 1] = {
-            ...last,
-            content: last.content.trim() ? last.content : `Could not reach the assistant: ${message}`,
-          }
+        if (last?.role === 'assistant' && !last.content.trim()) {
+          messages.pop()
         }
         return {
           messages,
@@ -236,8 +267,24 @@ function handleStreamEvent(
   }
 
   if (event.type === 'execution') {
+    // Parse debug metadata from the output field (formatted by chatEngine)
+    const outputParts: Record<string, unknown> = {}
+    const rawOutput = event.data.output ?? ''
+    for (const part of rawOutput.split(' ')) {
+      const [k, v] = part.split('=')
+      if (k && v !== undefined) outputParts[k] = v
+    }
     set({
       lastExecution: event.data,
+      lastDebugInfo: {
+        input:        (outputParts['input'] as string) ?? '',
+        intentType:   (outputParts['intent'] as string) ?? '—',
+        intentParams: { app: outputParts['app'] ?? '—' },
+        ok:           event.data.ok,
+        message:      event.data.message,
+        output:       rawOutput,
+        at:           new Date().toISOString(),
+      },
       error: event.data.ok ? null : event.data.message,
     })
     return
@@ -282,17 +329,13 @@ function handleStreamEvent(
 
   if (event.type === 'error') {
     flushPendingDeltasSync(set)
-    const msg = event.data.message
-    console.error('[JARVIS_UI] stream error', event.streamId, msg)
+    const msg = sanitizeChatError(event.data.message)
+    console.error('[JARVIS_UI] stream error', event.streamId, event.data.message)
     set((state) => {
       const messages = [...state.messages]
       const last = messages[messages.length - 1]
-      if (last?.role === 'assistant') {
-        const existing = last.content.trim()
-        messages[messages.length - 1] = {
-          ...last,
-          content: existing ? `${existing}\n\n_${msg}_` : `Something went wrong: ${msg}`,
-        }
+      if (last?.role === 'assistant' && !last.content.trim()) {
+        messages.pop()
       }
       return {
         messages,

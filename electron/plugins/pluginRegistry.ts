@@ -14,6 +14,7 @@
  *   agent.*    → agentPlanner (Gemini-backed)
  */
 
+import { safeLogger } from '../main/safeLogger.js'
 import type { ResolvedIntent, NlpIntentType } from '../ai/nlpRouter.js'
 import { runtimeState } from '../system/runtimeState.js'
 import { executeAppIntent } from './apps/appPlugin.js'
@@ -46,6 +47,7 @@ import {
 import { openUrl, openSite, webSearch, youtubeSearch } from './browser/browserAgent.js'
 import { listWindows, getActiveWindow } from '../system/windowManager.js'
 import { planGoalWithGemini } from '../ai/agentPlanner.js'
+import { pressKey, typeText } from '../system/keyboardController.js'
 
 export type PluginResult = { ok: boolean; message: string; data?: unknown }
 
@@ -171,6 +173,27 @@ async function executeWindowIntent(intent: ResolvedIntent): Promise<PluginResult
   }
 }
 
+// ─── Keyboard dispatch ────────────────────────────────────────────────────────
+
+async function executeKeyboardIntent(intent: ResolvedIntent): Promise<PluginResult> {
+  const p = intent.params
+
+  switch (intent.type as NlpIntentType) {
+    case 'keyboard.shortcut': {
+      const key = p.key ?? ''
+      if (!key) return { ok: false, message: 'No key specified.' }
+      return pressKey(key)
+    }
+    case 'keyboard.type': {
+      const text = p.text ?? ''
+      if (!text) return { ok: false, message: 'No text to type.' }
+      return typeText(text)
+    }
+    default:
+      return { ok: false, message: `Unknown keyboard intent: ${intent.type}` }
+  }
+}
+
 // ─── Agent dispatch ───────────────────────────────────────────────────────────
 
 async function executeAgentIntent(intent: ResolvedIntent): Promise<PluginResult> {
@@ -191,6 +214,7 @@ async function executeAgentIntent(intent: ResolvedIntent): Promise<PluginResult>
  */
 export async function executeIntent(intent: ResolvedIntent): Promise<PluginResult> {
   const domain = intent.type.split('.')[0]
+  safeLogger.info(`[JARVIS_AUTOMATION] executeIntent type=${intent.type} domain=${domain}`)
 
   try {
     switch (domain) {
@@ -200,13 +224,14 @@ export async function executeIntent(intent: ResolvedIntent): Promise<PluginResul
       case 'system':  return await executeSystemIntent(intent)
       case 'browser': return await executeBrowserIntent(intent)
       case 'window':  return await executeWindowIntent(intent)
-      case 'agent':   return await executeAgentIntent(intent)
+      case 'agent':    return await executeAgentIntent(intent)
+      case 'keyboard': return await executeKeyboardIntent(intent)
       default:
         return { ok: false, message: `No plugin registered for domain "${domain}".` }
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error('[PLUGIN_REGISTRY] unhandled error', intent.type, msg)
+    safeLogger.error('[PLUGIN_REGISTRY] unhandled error', intent.type, msg)
     return { ok: false, message: `Command failed: ${msg.slice(0, 200)}` }
   }
 }

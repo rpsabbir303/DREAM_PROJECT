@@ -5,6 +5,7 @@
  * All operations are async and non-blocking.
  */
 
+import { safeLogger } from '../main/safeLogger.js'
 import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
 
@@ -37,7 +38,7 @@ export async function isProcessRunning(imageName: string): Promise<boolean> {
 export async function detectFirstRunning(imageNames: string[]): Promise<string | null> {
   for (const name of imageNames) {
     if (await isProcessRunning(name)) {
-      console.log('[JARVIS_PROC] detected', name)
+      safeLogger.info('[JARVIS_PROC] detected', name)
       return name
     }
   }

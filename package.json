@@ -2,7 +2,7 @@
   "name": "my-project-frontend",
   "private": true,
   "version": "0.0.0",
-  "main": "dist-electron/electron/main/index.js",
+  "main": "dist-electron/electron/main/bootstrap.js",
   "type": "module",
   "scripts": {
     "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && npm run build:electron && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",

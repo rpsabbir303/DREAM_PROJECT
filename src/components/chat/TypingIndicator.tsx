@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion'
+import { ChatJarvisMark } from '@/components/chat/ChatJarvisMark'
 
 interface TypingIndicatorProps {
   label?: string
@@ -10,28 +11,28 @@ export function TypingIndicator({ label }: TypingIndicatorProps) {
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -4 }}
-      className="flex items-center gap-3 px-1 py-2"
+      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+      className="flex justify-start"
     >
-      <motion.div
-        className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-amber-500/25 bg-gradient-to-br from-amber-700/18 to-amber-600/10"
-        animate={{
-          boxShadow: [
-            '0 0 16px rgba(200,155,94,0.18), 0 0 12px rgba(240,201,135,0.1)',
-            '0 0 24px rgba(240,201,135,0.28), 0 0 18px rgba(200,155,94,0.16)',
-            '0 0 16px rgba(200,155,94,0.18), 0 0 12px rgba(240,201,135,0.1)',
-          ],
-        }}
-        transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
-      >
-        <span className="flex gap-0.5">
-          <span className="jarvis-typing-dot h-1.5 w-1.5 rounded-full bg-amber-400" />
-          <span className="jarvis-typing-dot h-1.5 w-1.5 rounded-full bg-amber-300/90" />
-          <span className="jarvis-typing-dot h-1.5 w-1.5 rounded-full bg-amber-500/80" />
-        </span>
-      </motion.div>
-      {label && (
-        <span className="text-[13px] tracking-wide text-amber-200/45">{label}</span>
-      )}
+      <div className="jarvis-msg-assistant max-w-[min(82%,30rem)] w-full text-white/[0.9]">
+        <header className="jarvis-msg-assistant-header">
+          <ChatJarvisMark />
+          <span className="jarvis-msg-assistant-name">JARVIS</span>
+        </header>
+        <motion.div
+          className="jarvis-msg-typing-panel flex items-center gap-2.5"
+          initial={{ opacity: 0.88 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.2 }}
+        >
+          <span className="jarvis-msg-typing-dots" aria-hidden>
+            <span className="jarvis-typing-dot h-1.5 w-1.5 rounded-full bg-white/50" />
+            <span className="jarvis-typing-dot h-1.5 w-1.5 rounded-full bg-white/40" />
+            <span className="jarvis-typing-dot h-1.5 w-1.5 rounded-full bg-white/35" />
+          </span>
+          {label && <span className="text-xs text-white/40">{label}</span>}
+        </motion.div>
+      </div>
     </motion.div>
   )
 }

@@ -1,13 +1,34 @@
+import { safeLogger } from '../../main/safeLogger.js'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import type { ChatMessage } from '../../../shared/interfaces/ipc.js'
 import { canUseConfiguredGemini, getEffectiveGeminiApiKey, resolveGeminiModel } from '../geminiEnv.js'
+import { recordSuccess, recordFailure, recordRetry } from '../aiHealthService.js'
 
 const GEMINI_TIMEOUT_MS = Math.min(
   Math.max(30_000, Number(process.env.GEMINI_FETCH_TIMEOUT_MS ?? 120_000)),
   600_000,
 )
 
-/** Redact SDK error strings so logs do not echo full Google endpoint URLs. */
+// ─── Retry config ─────────────────────────────────────────────────────────────
+
+const MAX_RETRIES = 3
+const RETRY_BASE_MS = 1_000   // 1 s, 2 s, 4 s
+
+function isRetryable(error: Error): boolean {
+  const msg = error.message.toLowerCase()
+  // Retry on network/server errors, not on auth or bad-request errors
+  if (msg.includes('api key') || msg.includes('unauthorized') || msg.includes('403')) return false
+  if (msg.includes('invalid') || msg.includes('400'))   return false
+  if (msg.includes('quota') || msg.includes('429'))     return false
+  return true   // network timeout, 5xx, ECONNRESET, etc.
+}
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms))
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
 function redactHttpUrls(message: string): string {
   return message.replace(/\bhttps?:\/\/[^\s]+/gi, '[sdk-endpoint]')
 }
@@ -16,42 +37,38 @@ function buildPrompt(messages: ChatMessage[]): string {
   return messages.map((m) => `${m.role}: ${m.content}`).join('\n')
 }
 
-/**
- * Gemini via **only** `@google/generative-ai` — no `fetch`, no manual URLs, no `baseUrl` / `apiVersion` in app code.
- * HTTP is performed inside the SDK.
- */
+// ─── Startup ping ─────────────────────────────────────────────────────────────
+
 export async function initializeJarvisGeminiOnStartup(): Promise<void> {
   const resolvedModel = resolveGeminiModel()
-  console.log('[JARVIS_GEMINI] SDK ONLY MODE')
-  console.log('[JARVIS_GEMINI] MODEL =', resolvedModel)
+  safeLogger.info('[JARVIS_GEMINI] initializing — model=', resolvedModel)
 
   if (!canUseConfiguredGemini()) {
-    console.warn('[JARVIS_GEMINI] Startup skipped — GEMINI_API_KEY missing or placeholder in `.env`')
+    safeLogger.warn('[JARVIS_GEMINI] GEMINI_API_KEY missing or placeholder in .env')
+    safeLogger.warn('[JARVIS_GEMINI] → Get a free key at https://aistudio.google.com/apikey')
+    safeLogger.warn('[JARVIS_GEMINI] → Add it to .env: GEMINI_API_KEY=AIza...')
+    recordFailure('GEMINI_API_KEY not set in .env')
     return
   }
 
-  const apiKey = getEffectiveGeminiApiKey()
-  if (!apiKey) {
-    console.warn('[JARVIS_GEMINI] Startup skipped — no usable API key')
-    return
-  }
-
+  const apiKey = getEffectiveGeminiApiKey()!
+  const t0 = Date.now()
   try {
     const genAI = new GoogleGenerativeAI(apiKey)
     const model = genAI.getGenerativeModel({ model: resolvedModel })
-    const result = await model.generateContent('ping', { timeout: Math.min(25_000, GEMINI_TIMEOUT_MS) })
-    const text = result.response.text()
-    void text
-    console.log('[JARVIS_GEMINI] startup ping ok')
+    const result = await model.generateContent('ping', { timeout: 15_000 })
+    void result.response.text()
+    recordSuccess(Date.now() - t0)
+    safeLogger.info('[JARVIS_GEMINI] startup ping ok — AI brain ONLINE')
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
-    console.error('[JARVIS_GEMINI] startup ping failed:', redactHttpUrls(msg))
+    recordFailure(redactHttpUrls(msg))
+    safeLogger.error('[JARVIS_GEMINI] startup ping failed:', redactHttpUrls(msg))
   }
 }
 
-/**
- * One chat turn: `GoogleGenerativeAI` → `getGenerativeModel` → `generateContent(prompt)` → `response.text()`.
- */
+// ─── Chat completion with retry + backoff ─────────────────────────────────────
+
 export async function completeGeminiChat(params: {
   messages: ChatMessage[]
   signal?: AbortSignal
@@ -59,12 +76,11 @@ export async function completeGeminiChat(params: {
   const apiKey = getEffectiveGeminiApiKey()
   if (!apiKey) {
     const raw = process.env.GEMINI_API_KEY?.trim()
-    if (!raw) {
-      throw new Error(
-        'GEMINI_API_KEY is missing. Add it to the project root `.env` (see https://aistudio.google.com/apikey).',
-      )
-    }
-    throw new Error('GEMINI_API_KEY is set but looks like a placeholder — use a real key from Google AI Studio.')
+    const err = raw
+      ? 'GEMINI_API_KEY looks like a placeholder — paste a real key from https://aistudio.google.com/apikey'
+      : 'GEMINI_API_KEY is missing — add it to .env and restart'
+    recordFailure(err)
+    throw new Error(err)
   }
 
   const resolvedModel = resolveGeminiModel()
@@ -76,17 +92,42 @@ export async function completeGeminiChat(params: {
   const genAI = new GoogleGenerativeAI(apiKey)
   const model = genAI.getGenerativeModel({ model: resolvedModel })
 
-  try {
-    const result = await model.generateContent(prompt, {
-      signal: params.signal,
-      timeout: GEMINI_TIMEOUT_MS,
-    })
-    const text = result.response.text().trim()
-    console.log('[JARVIS_GEMINI] chat ok')
-    return text
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error)
-    console.error('[JARVIS_GEMINI] chat failed:', redactHttpUrls(msg))
-    throw new Error(redactHttpUrls(msg))
+  let lastError: Error = new Error('Unknown error')
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (params.signal?.aborted) throw new Error('Request cancelled.')
+
+    if (attempt > 0) {
+      recordRetry()
+      const backoff = RETRY_BASE_MS * Math.pow(2, attempt - 1)
+      safeLogger.info(`[JARVIS_GEMINI] retrying in ${backoff}ms (attempt ${attempt}/${MAX_RETRIES})`)
+      await sleep(backoff)
+    }
+
+    const t0 = Date.now()
+    try {
+      const result = await model.generateContent(prompt, {
+        signal:  params.signal,
+        timeout: GEMINI_TIMEOUT_MS,
+      })
+      const text = result.response.text().trim()
+      recordSuccess(Date.now() - t0)
+      safeLogger.info('[JARVIS_GEMINI] chat ok, chars=', text.length)
+      return text
+    } catch (error) {
+      const caught = error instanceof Error ? error : new Error(String(error))
+      lastError = caught
+      const clean = redactHttpUrls(caught.message)
+      safeLogger.warn(`[JARVIS_GEMINI] attempt ${attempt} failed: ${clean}`)
+
+      if (!isRetryable(caught)) {
+        recordFailure(clean)
+        throw caught
+      }
+    }
   }
+
+  const finalMsg = redactHttpUrls(lastError.message)
+  recordFailure(finalMsg)
+  throw new Error(`Gemini request failed after ${MAX_RETRIES} retries: ${finalMsg}`, { cause: lastError })
 }

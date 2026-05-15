@@ -13,6 +13,7 @@
  *   window.*   → windowManager
  *   agent.*    → agentPlanner (Gemini-backed)
  */
+import { safeLogger } from '../main/safeLogger.js';
 import { runtimeState } from '../system/runtimeState.js';
 import { executeAppIntent } from './apps/appPlugin.js';
 import { openFolder, createFolder, createFile, deleteFile, moveFile, renameFile, searchFiles, emptyRecycleBin, } from './files/fileSystemAgent.js';
@@ -20,6 +21,7 @@ import { volumeMute, volumeSet, volumeIncrease, volumeDecrease, setBrightness, t
 import { openUrl, openSite, webSearch, youtubeSearch } from './browser/browserAgent.js';
 import { listWindows, getActiveWindow } from '../system/windowManager.js';
 import { planGoalWithGemini } from '../ai/agentPlanner.js';
+import { pressKey, typeText } from '../system/keyboardController.js';
 // ─── File / Folder dispatch ───────────────────────────────────────────────────
 async function executeFileIntent(intent) {
     const p = intent.params;
@@ -142,6 +144,26 @@ async function executeWindowIntent(intent) {
             return { ok: false, message: `Unknown window intent: ${intent.type}` };
     }
 }
+// ─── Keyboard dispatch ────────────────────────────────────────────────────────
+async function executeKeyboardIntent(intent) {
+    const p = intent.params;
+    switch (intent.type) {
+        case 'keyboard.shortcut': {
+            const key = p.key ?? '';
+            if (!key)
+                return { ok: false, message: 'No key specified.' };
+            return pressKey(key);
+        }
+        case 'keyboard.type': {
+            const text = p.text ?? '';
+            if (!text)
+                return { ok: false, message: 'No text to type.' };
+            return typeText(text);
+        }
+        default:
+            return { ok: false, message: `Unknown keyboard intent: ${intent.type}` };
+    }
+}
 // ─── Agent dispatch ───────────────────────────────────────────────────────────
 async function executeAgentIntent(intent) {
     const goal = intent.params.goal ?? intent.rawInput;
@@ -159,6 +181,7 @@ async function executeAgentIntent(intent) {
  */
 export async function executeIntent(intent) {
     const domain = intent.type.split('.')[0];
+    safeLogger.info(`[JARVIS_AUTOMATION] executeIntent type=${intent.type} domain=${domain}`);
     try {
         switch (domain) {
             case 'app': return await executeAppIntent(intent);
@@ -168,13 +191,14 @@ export async function executeIntent(intent) {
             case 'browser': return await executeBrowserIntent(intent);
             case 'window': return await executeWindowIntent(intent);
             case 'agent': return await executeAgentIntent(intent);
+            case 'keyboard': return await executeKeyboardIntent(intent);
             default:
                 return { ok: false, message: `No plugin registered for domain "${domain}".` };
         }
     }
     catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error('[PLUGIN_REGISTRY] unhandled error', intent.type, msg);
+        safeLogger.error('[PLUGIN_REGISTRY] unhandled error', intent.type, msg);
         return { ok: false, message: `Command failed: ${msg.slice(0, 200)}` };
     }
 }

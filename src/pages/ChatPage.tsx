@@ -3,8 +3,11 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { ChatAssistantMarkdown } from '@/components/chat/ChatAssistantMarkdown'
 import { ChatCommandBar } from '@/components/chat/ChatCommandBar'
 import { ChatEmptyState } from '@/components/chat/ChatEmptyState'
+import { ChatJarvisMark } from '@/components/chat/ChatJarvisMark'
 import { TypingIndicator } from '@/components/chat/TypingIndicator'
+import { DebugPanel } from '@/components/debug/DebugPanel'
 import { cn } from '@/lib/cn'
+import { formatMessageTime } from '@/lib/formatMessageTime'
 import { jarvisThinkingLabel } from '@/lib/jarvisChatUx'
 import { useChatStore } from '@/store/chatStore'
 import { useScreenStore } from '@/store/screenStore'
@@ -54,114 +57,114 @@ export function ChatPage() {
   const displayError = error || voiceError || screenError
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="flex min-h-0 flex-1 flex-col"
-    >
-      {/* Message canvas */}
-      <motion.div
+    <div className="jarvis-chat-shell">
+      {/* Scrollable transcript — fills space above the dock */}
+      <div
         ref={scrollRef}
         className={cn(
-          'jarvis-chat-canvas flex min-h-0 flex-1 flex-col overflow-y-auto scroll-smooth px-4 pb-4 pt-5 sm:px-6 xl:px-10',
+          'jarvis-chat-scroll jarvis-chat-canvas',
           showEmpty && !isBusy && 'jarvis-chat-canvas--hero',
         )}
       >
-        {showEmpty && !isBusy ? (
-          <ChatEmptyState />
-        ) : (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
-            className="jarvis-glass jarvis-glow-border relative z-[1] mx-auto flex w-full max-w-3xl flex-col gap-6 rounded-3xl p-5 sm:p-6"
-          >
-            <AnimatePresence initial={false} mode="popLayout">
-              {messages.map((message, index) => {
-                const isUser = message.role === 'user'
-                const isLatest = index === messages.length - 1
-                const isAssistantStreaming = isLatest && !isUser && isStreaming
+        <div className="jarvis-chat-scroll-inner mx-auto w-full max-w-2xl px-4 pt-3 sm:px-6 sm:pt-4">
+          {showEmpty && !isBusy ? (
+            <ChatEmptyState />
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              <AnimatePresence initial={false} mode="popLayout">
+                {messages.map((message, index) => {
+                  const isUser = message.role === 'user'
+                  const isLatest = index === messages.length - 1
+                  const isAssistantStreaming = isLatest && !isUser && isStreaming
+                  const timeLabel = formatMessageTime(message.createdAt)
 
-                return (
-                  <motion.div
-                    key={message.id}
-                    layout
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.98 }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 34 }}
-                    className={isUser ? 'flex justify-end' : 'flex justify-start'}
-                  >
-                    {isUser ? (
-                      <div className="jarvis-msg-user max-w-[85%] rounded-2xl rounded-br-lg px-4 py-3.5 text-[15px] leading-relaxed text-white/92">
-                        <p className="whitespace-pre-wrap">{message.content || '…'}</p>
-                      </div>
-                    ) : (
-                      <div className="group relative max-w-[92%]">
+                  return (
+                    <motion.div
+                      key={message.id}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{
+                        duration: 0.22,
+                        ease: [0.22, 1, 0.36, 1],
+                        delay: Math.min(index * 0.04, 0.2),
+                      }}
+                      className={cn(
+                        isUser ? 'flex justify-end' : 'flex justify-start',
+                      )}
+                    >
+                      {isUser ? (
                         <motion.div
-                          className="absolute -inset-px rounded-2xl opacity-0 blur-md transition-opacity duration-500 group-hover:opacity-100"
-                          style={{
-                            background:
-                              'linear-gradient(135deg, rgba(240,201,135,0.18) 0%, transparent 50%, rgba(200,155,94,0.12) 100%)',
-                          }}
-                          animate={
-                            isLatest && isBusy
-                              ? { opacity: [0.4, 0.7, 0.4] }
-                              : { opacity: 0.5 }
-                          }
-                          transition={{ duration: 2.5, repeat: isLatest && isBusy ? Infinity : 0 }}
-                        />
-                        <motion.div
-                          className="jarvis-msg-assistant relative rounded-2xl rounded-bl-lg px-5 py-4"
-                          initial={isAssistantStreaming ? { opacity: 0.95 } : false}
-                          animate={{ opacity: 1 }}
+                          className="jarvis-msg-user max-w-[min(78%,28rem)] text-white/90"
+                          whileHover={{ y: -1 }}
+                          transition={{ duration: 0.2 }}
                         >
+                          <p className="relative z-[1] whitespace-pre-wrap">
+                            {message.content || '…'}
+                          </p>
+                        </motion.div>
+                      ) : (
+                        <div className="max-w-[min(82%,30rem)] w-full">
                           <motion.div
-                            key={isLatest ? `${message.id}-${message.content.length}` : message.id}
-                            initial={isLatest ? { opacity: 0.9 } : false}
+                            className="jarvis-msg-assistant text-white/[0.9]"
+                            initial={isAssistantStreaming ? { opacity: 0.96 } : false}
                             animate={{ opacity: 1 }}
                             transition={{ duration: 0.2 }}
-                            className="text-[15px] leading-[1.65] text-white/[0.92]"
                           >
-                            <ChatAssistantMarkdown content={message.content} />
+                            <header className="jarvis-msg-assistant-header">
+                              <ChatJarvisMark />
+                              <span className="jarvis-msg-assistant-name">JARVIS</span>
+                              {timeLabel && (
+                                <time
+                                  className="jarvis-msg-assistant-time"
+                                  dateTime={message.createdAt}
+                                >
+                                  {timeLabel}
+                                </time>
+                              )}
+                            </header>
+                            <div className="jarvis-msg-assistant-body">
+                              <motion.div
+                                key={
+                                  isLatest
+                                    ? `${message.id}-${message.content.length}`
+                                    : message.id
+                                }
+                                initial={isLatest ? { opacity: 0.94 } : false}
+                                animate={{ opacity: 1 }}
+                                transition={{ duration: 0.18 }}
+                              >
+                                <ChatAssistantMarkdown content={message.content} />
+                              </motion.div>
+                            </div>
                           </motion.div>
-                        </motion.div>
-                      </div>
-                    )}
-                  </motion.div>
-                )
-              })}
-            </AnimatePresence>
+                        </div>
+                      )}
+                    </motion.div>
+                  )
+                })}
+              </AnimatePresence>
 
-            <AnimatePresence>
-              {isBusy && (
-                <TypingIndicator label={jarvisThinkingLabel(activeStreamId, isStreaming)} />
-              )}
-            </AnimatePresence>
+              <AnimatePresence>
+                {isBusy && (
+                  <TypingIndicator label={jarvisThinkingLabel(activeStreamId, isStreaming)} />
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+        </div>
+      </div>
 
-            {displayError && (
-              <motion.p
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200/90"
-              >
-                {displayError}
-              </motion.p>
-            )}
-          </motion.div>
+      {/* Fixed input dock */}
+      <div className="jarvis-chat-dock relative px-4 py-3 sm:px-6 xl:px-10">
+        {displayError && (
+          <p
+            className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 max-w-md -translate-x-1/2 rounded-lg border border-white/[0.08] bg-[#121214]/95 px-3 py-1.5 text-center text-[11px] text-white/55 shadow-[0_2px_12px_rgba(0,0,0,0.2)] backdrop-blur-md"
+            role="status"
+          >
+            {displayError}
+          </p>
         )}
-      </motion.div>
-
-      {/* Floating command dock */}
-      <div className="relative shrink-0 px-4 py-5 sm:px-6 xl:px-10">
-        <motion.div
-          className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-400/15 to-transparent"
-          aria-hidden
-        />
-        <motion.div
-          className="pointer-events-none absolute inset-x-8 top-0 h-24 bg-gradient-to-t from-[#050505] via-[#0b0b0d]/85 to-transparent"
-          aria-hidden
-        />
         <ChatCommandBar
           value={inputValue}
           onChange={setInputValue}
@@ -189,6 +192,7 @@ export function ChatPage() {
           disabled={isBusy}
         />
       </div>
-    </motion.div>
+      <DebugPanel />
+    </div>
   )
 }

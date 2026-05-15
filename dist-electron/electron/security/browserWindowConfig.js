@@ -1,3 +1,4 @@
+import { safeLogger } from '../main/safeLogger.js';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -9,10 +10,10 @@ import { fileURLToPath } from 'node:url';
 const SECURITY_DIR = path.dirname(fileURLToPath(import.meta.url));
 export const PRELOAD_ABSOLUTE_PATH = path.normalize(path.join(SECURITY_DIR, '..', 'preload', 'index.js'));
 export function logPreloadDiagnostics() {
-    console.info('[JARVIS_ELECTRON] preload path:', PRELOAD_ABSOLUTE_PATH);
-    console.info('[JARVIS_ELECTRON] preload exists:', existsSync(PRELOAD_ABSOLUTE_PATH));
+    safeLogger.info('[JARVIS_ELECTRON] preload path:', PRELOAD_ABSOLUTE_PATH);
+    safeLogger.info('[JARVIS_ELECTRON] preload exists:', existsSync(PRELOAD_ABSOLUTE_PATH));
     if (!existsSync(PRELOAD_ABSOLUTE_PATH)) {
-        console.error('[JARVIS_ELECTRON] preload file missing — run `npm run build:electron`; window.jarvis will be undefined.');
+        safeLogger.error('[JARVIS_ELECTRON] preload file missing — run `npm run build:electron`');
     }
 }
 /**

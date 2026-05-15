@@ -23,6 +23,7 @@
  *   const result = await orchestrate({ action: 'open', query: 'photoshop', app: discoveredApp })
  */
 
+import { safeLogger } from '../main/safeLogger.js'
 import { spawn } from 'node:child_process'
 import {
   findBestWindow,
@@ -31,7 +32,6 @@ import {
   minimizeByHwnd,
   maximizeByHwnd,
   restoreByHwnd,
-  closeByHwnd,
 } from './windowTracker.js'
 import { waitForWindow, getTrackedWindows } from './desktopStateEngine.js'
 import { resolveStrategy, formatStrategyLog } from './launchStrategyResolver.js'
@@ -112,7 +112,7 @@ async function handleOpen(req: OrchestratorRequest): Promise<OrchestratorResult>
                                    'open in background'
     const focusResult = await focusByHwnd(existingWindow.hwnd)
     if (focusResult.ok) {
-      console.log(`[JARVIS_EXEC] found existing window — ${label} (${state}) hwnd=${existingWindow.hwnd}`)
+      safeLogger.info(`[JARVIS_EXEC] found existing window — ${label} (${state}) hwnd=${existingWindow.hwnd}`)
       return {
         ok:       true,
         message:  `${label} is already open. ${existingWindow.isMinimized ? 'Restored and brought' : 'Brought'} it to the front.`,
@@ -127,7 +127,7 @@ async function handleOpen(req: OrchestratorRequest): Promise<OrchestratorResult>
   if (app?.processName) {
     const procName = app.processName.replace(/\.exe$/i, '')
     if (isProcessInGraph(procName)) {
-      console.log(`[JARVIS_EXEC] process running but no window yet — ${procName}, waiting…`)
+      safeLogger.info(`[JARVIS_EXEC] process running but no window yet — ${procName}, waiting…`)
       const appeared = await waitForWindow(
         (w) => w.processName.includes(procName),
         3_000,
@@ -155,14 +155,14 @@ async function handleOpen(req: OrchestratorRequest): Promise<OrchestratorResult>
   }
 
   const decision = resolveStrategy(app)
-  console.log(formatStrategyLog(decision))
+  safeLogger.info(formatStrategyLog(decision))
 
   // ── Step 4: Spawn ─────────────────────────────────────────────────────────
   // Capture current window hwnds before launching so we can detect the new one
   const hwndsBefore = new Set(getTrackedWindows().map((w) => w.hwnd))
 
   const pid = await spawnDetached(decision.executable, decision.args)
-  console.log(`[JARVIS_EXEC] launched pid=${pid || 'unknown'} label="${label}"`)
+  safeLogger.info(`[JARVIS_EXEC] launched pid=${pid || 'unknown'} label="${label}"`)
 
   if (!pid && decision.strategy !== 'cmd_start') {
     // cmd_start doesn't give us a PID; assume success
@@ -193,7 +193,7 @@ async function handleOpen(req: OrchestratorRequest): Promise<OrchestratorResult>
 
   if (newWindow) {
     await focusByHwnd(newWindow.hwnd)
-    console.log(`[JARVIS_WINDOW] detected hwnd=${newWindow.hwnd} title="${newWindow.title}"`)
+    safeLogger.info(`[JARVIS_WINDOW] detected hwnd=${newWindow.hwnd} title="${newWindow.title}"`)
     return {
       ok:       true,
       message:  `Opening ${label}.`,
@@ -218,38 +218,39 @@ async function handleClose(req: OrchestratorRequest): Promise<OrchestratorResult
   const { query, app } = req
   const label = appLabel(query, app)
 
-  // Find window first
-  const win = findBestWindow(query)
-  if (win) {
-    const result = await closeByHwnd(win.hwnd)
-    if (result.ok) {
-      recordClosed(label)
-      systemEvents.emit('app_closed', { app: label })
-      return { ok: true, message: `Closed ${label}.`, hwnd: win.hwnd, launched: false }
+  // Build the full list of image names to try — from discovery + static registry
+  const imageNames: string[] = []
+  if (app?.processName) imageNames.push(app.processName)
+
+  // Pull additional process names from the static app registry if available
+  try {
+    const { resolveApp } = await import('./appRegistry.js')
+    // Try to resolve by the query as an app key, then by canonical name
+    const staticDef = resolveApp(query)
+    if (staticDef?.processNames) {
+      for (const n of staticDef.processNames) {
+        if (!imageNames.includes(n)) imageNames.push(n)
+      }
     }
+  } catch { /* registry optional */ }
+
+  // Deduplicate, ensure .exe suffix
+  const cleanNames = [...new Set(
+    imageNames.map((n) => n.toLowerCase().endsWith('.exe') ? n : `${n}.exe`),
+  )]
+
+  safeLogger.info(`[JARVIS_CLOSE] label="${label}" images=[${cleanNames.join(', ')}]`)
+
+  // Use the multi-stage reliable close pipeline
+  const { reliableClose } = await import('./processController.js')
+  const result = await reliableClose(query, cleanNames.length ? cleanNames : [query], label)
+
+  if (result.ok) {
+    recordClosed(label)
+    systemEvents.emit('app_closed', { app: label })
   }
 
-  // Fallback: close by process name via taskkill
-  const procName = app?.processName ?? `${query}.exe`
-  const { exec } = await import('node:child_process')
-  const { promisify } = await import('node:util')
-  const execAsync = promisify(exec)
-
-  try {
-    const imageName = procName.endsWith('.exe') ? procName : `${procName}.exe`
-    const { stdout } = await execAsync(
-      `cmd /c taskkill /F /IM "${imageName}"`,
-      { windowsHide: true, timeout: 8_000 },
-    )
-    const lower = stdout.toLowerCase()
-    if (!lower.includes('not found') && !lower.includes('no tasks')) {
-      recordClosed(label)
-      systemEvents.emit('app_closed', { app: label })
-      return { ok: true, message: `Closed ${label}.`, launched: false }
-    }
-  } catch { /* Not running */ }
-
-  return { ok: true, message: `${label} doesn't appear to be running.`, launched: false }
+  return { ok: result.ok, message: result.message, launched: false }
 }
 
 // ─── Focus / Minimize / Maximize / Restore ────────────────────────────────────
@@ -292,7 +293,7 @@ async function handleWindowOp(
  * @param req.app      Resolved DiscoveredApp (required for open)
  */
 export async function orchestrate(req: OrchestratorRequest): Promise<OrchestratorResult> {
-  console.log(`[JARVIS_EXEC] orchestrate action=${req.action} query="${req.query}"`)
+  safeLogger.info(`[JARVIS_EXEC] orchestrate action=${req.action} query="${req.query}"`)
 
   switch (req.action) {
     case 'open':

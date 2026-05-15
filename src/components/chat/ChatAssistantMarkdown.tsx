@@ -19,10 +19,11 @@ function ChatAssistantMarkdownInner({ content }: ChatAssistantMarkdownProps) {
 
   return (
     <motion.div
-      initial={{ opacity: 0.92 }}
+      initial={{ opacity: 0.96 }}
       animate={{ opacity: 1 }}
+      transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
       className={[
-        'markdown-body text-[15px] leading-[1.65] tracking-[0.01em] text-white/[0.93]',
+        'markdown-body text-[14px] leading-[1.55] text-white/[0.9]',
         '[&_a]:text-amber-300/90 [&_a]:underline-offset-2 hover:[&_a]:text-amber-200',
         '[&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-amber-400/35 [&_blockquote]:bg-amber-500/[0.04] [&_blockquote]:pl-3 [&_blockquote]:text-white/70',
         '[&_h1]:mb-2 [&_h1]:text-base [&_h1]:font-medium [&_h1]:text-white/95',
@@ -31,7 +32,7 @@ function ChatAssistantMarkdownInner({ content }: ChatAssistantMarkdownProps) {
         '[&_hr]:my-3 [&_hr]:border-white/[0.06]',
         '[&_li]:my-0.5 [&_li]:marker:text-amber-400/50',
         '[&_ol]:list-decimal [&_ol]:pl-5',
-        '[&_p]:mb-2.5 [&_p]:last:mb-0',
+        '[&_p]:mb-1.5 [&_p]:last:mb-0',
         '[&_strong]:font-medium [&_strong]:text-amber-100/90',
         '[&_ul]:list-disc [&_ul]:pl-5',
       ].join(' ')}

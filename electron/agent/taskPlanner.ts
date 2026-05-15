@@ -9,6 +9,7 @@
  *   5. Emits plan_step events on systemEvents bus
  */
 
+import { safeLogger } from '../main/safeLogger.js'
 import { planGoalWithGemini } from '../ai/agentPlanner.js'
 import { executeIntent } from '../plugins/pluginRegistry.js'
 import { getRiskLevel } from '../security/actionGuard.js'
@@ -81,7 +82,7 @@ export async function executePlan(
   goal: string,
   onProgress: ProgressCallback,
 ): Promise<string> {
-  console.log(`[JARVIS_PLANNER] starting plan for goal="${goal}"`)
+  safeLogger.info(`[JARVIS_PLANNER] starting plan for goal="${goal}"`)
 
   const plan  = await planGoalWithGemini(goal)
   const total = plan.steps.length
@@ -97,7 +98,7 @@ export async function executePlan(
     const stepNum = i + 1
     const intent  = stepToIntent(step, goal)
 
-    console.log(`[JARVIS_PLANNER] step ${stepNum}/${total} — "${step.title}" (${step.actionType} → ${step.target})`)
+    safeLogger.info(`[JARVIS_PLANNER] step ${stepNum}/${total} — "${step.title}" (${step.actionType} → ${step.target})`)
 
     if (!intent) {
       const msg = `${stepNum}. ${step.title} — ⚠️ skipped (action not supported yet)`
@@ -130,6 +131,6 @@ export async function executePlan(
 
   lines.push('', 'All steps complete.')
   const summary = lines.join('\n')
-  console.log(`[JARVIS_PLANNER] done — goal="${goal}"`)
+  safeLogger.info(`[JARVIS_PLANNER] done — goal="${goal}"`)
   return summary
 }

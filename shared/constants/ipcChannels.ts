@@ -74,6 +74,20 @@ export const IPC_CHANNELS = {
   desktopAgentWindows:     'desktop-agent:windows',
   desktopAgentRunningApps: 'desktop-agent:running-apps',
   desktopAgentActiveWindow:'desktop-agent:active-window',
+
+  // Automation self-test
+  automationSelfTest: 'automation:self-test',
+
+  // Direct execution bypass (dev/debug — skips NLP entirely)
+  automationDirectExec: 'automation:direct-exec',
+  // Live window snapshot for debug panel
+  automationWindowSnapshot: 'automation:window-snapshot',
+
+  // AI provider health
+  aiHealthStatus: 'ai:health-status',
+  aiHealthPing:   'ai:health-ping',
+  // Save API key from renderer (writes to .env at runtime)
+  aiSetApiKey:    'ai:set-api-key',
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

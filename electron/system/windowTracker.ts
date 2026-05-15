@@ -22,6 +22,7 @@
  *   import { findBestWindow, focusByHwnd } from './windowTracker.js'
  */
 
+import { safeLogger } from '../main/safeLogger.js'
 import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
 import {
@@ -109,13 +110,13 @@ export function findBestWindow(query: string): TrackedWindow | null {
   }
 
   if (best) {
-    console.log(
+    safeLogger.info(
       `[JARVIS_WINDOW] matched query="${query}" ` +
       `proc=${best.processName} hwnd=${best.hwnd} ` +
       `score=${bestScore} focused=${best.isFocused} minimized=${best.isMinimized}`,
     )
   } else {
-    console.log(`[JARVIS_WINDOW] no window match for query="${query}"`)
+    safeLogger.info(`[JARVIS_WINDOW] no window match for query="${query}"`)
   }
 
   return best
@@ -172,11 +173,11 @@ export async function focusByHwnd(hwnd: number): Promise<WindowOpResult> {
       `if ([JarvisWT]::IsIconic($h)) { [JarvisWT]::ShowWindow($h, ${SW_RESTORE}) | Out-Null };` +
       `[JarvisWT]::SetForegroundWindow($h) | Out-Null`,
     )
-    console.log(`[JARVIS_WINDOW] focus success hwnd=${hwnd}`)
+    safeLogger.info(`[JARVIS_WINDOW] focus success hwnd=${hwnd}`)
     return { ok: true, message: 'Window focused.' }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error(`[JARVIS_WINDOW] focus failed hwnd=${hwnd} err=${msg.slice(0, 120)}`)
+    safeLogger.error(`[JARVIS_WINDOW] focus failed hwnd=${hwnd} err=${msg.slice(0, 120)}`)
     return { ok: false, message: `Could not focus window: ${msg.slice(0, 120)}` }
   }
 }
@@ -185,7 +186,7 @@ export async function focusByHwnd(hwnd: number): Promise<WindowOpResult> {
 export async function minimizeByHwnd(hwnd: number): Promise<WindowOpResult> {
   try {
     await runWin32(`$h = [IntPtr]${hwnd}; [JarvisWT]::ShowWindow($h, ${SW_MINIMIZE}) | Out-Null`)
-    console.log(`[JARVIS_WINDOW] minimized hwnd=${hwnd}`)
+    safeLogger.info(`[JARVIS_WINDOW] minimized hwnd=${hwnd}`)
     return { ok: true, message: 'Window minimized.' }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -197,7 +198,7 @@ export async function minimizeByHwnd(hwnd: number): Promise<WindowOpResult> {
 export async function maximizeByHwnd(hwnd: number): Promise<WindowOpResult> {
   try {
     await runWin32(`$h = [IntPtr]${hwnd}; [JarvisWT]::ShowWindow($h, ${SW_MAXIMIZE}) | Out-Null`)
-    console.log(`[JARVIS_WINDOW] maximized hwnd=${hwnd}`)
+    safeLogger.info(`[JARVIS_WINDOW] maximized hwnd=${hwnd}`)
     return { ok: true, message: 'Window maximized.' }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -209,7 +210,7 @@ export async function maximizeByHwnd(hwnd: number): Promise<WindowOpResult> {
 export async function restoreByHwnd(hwnd: number): Promise<WindowOpResult> {
   try {
     await runWin32(`$h = [IntPtr]${hwnd}; [JarvisWT]::ShowWindow($h, ${SW_RESTORE}) | Out-Null`)
-    console.log(`[JARVIS_WINDOW] restored hwnd=${hwnd}`)
+    safeLogger.info(`[JARVIS_WINDOW] restored hwnd=${hwnd}`)
     return { ok: true, message: 'Window restored.' }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -222,7 +223,7 @@ export async function closeByHwnd(hwnd: number): Promise<WindowOpResult> {
   try {
     // 0x0010 = WM_CLOSE
     await runWin32(`$h = [IntPtr]${hwnd}; [JarvisWT]::SendMessage($h, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null`)
-    console.log(`[JARVIS_WINDOW] WM_CLOSE sent hwnd=${hwnd}`)
+    safeLogger.info(`[JARVIS_WINDOW] WM_CLOSE sent hwnd=${hwnd}`)
     return { ok: true, message: 'Window closed.' }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
