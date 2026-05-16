@@ -27,3 +27,9 @@ release
 *.njsproj
 *.sln
 *.sw?
+
+
+.env
+.env.local
+.env.development
+.env.production
